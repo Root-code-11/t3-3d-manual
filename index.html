@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
 <style>
+[hidden] { display: none !important; }
 /* Layout: full-bleed 3D depot stage. Name plate top-left, tool panel right (bottom sheet on phones),
    part label follows the pointer. Single deliberate look: evening depot, livery cream as the one accent. */
 :root {
@@ -206,6 +207,11 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// about dialog (wired before the model loads, so it works while loading)
+const about = document.getElementById('about');
+document.getElementById('about-btn').addEventListener('click', () => { about.hidden = false; });
+about.addEventListener('click', (e) => { if (e.target === about || e.target.closest('[data-close]')) about.hidden = true; });
 
 // ------------------------------------------------------------------ texts (Czech / English)
 // Numbers come from the sources named on each card; anything not confirmed by them is said so in the note.
@@ -602,10 +608,6 @@ function select(id) { selected = id; paint(); showCard(); }
 document.getElementById('i-close').addEventListener('click', () => select(null));
 addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (!about.hidden) about.hidden = true; else select(null); } });
 
-// about dialog
-const about = document.getElementById('about');
-document.getElementById('about-btn').addEventListener('click', () => { about.hidden = false; });
-about.addEventListener('click', (e) => { if (e.target === about || e.target.closest('[data-close]')) about.hidden = true; });
 
 // language
 function applyLang(L) {
