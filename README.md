@@ -10,7 +10,7 @@ Interaktivní 3D model první pražské tramvaje Tatra T3, prototypu 6101 z roku
 
 ## Spuštění / Running it
 
-- **Online:** po zapnutí GitHub Pages na `https://<uživatel>.github.io/t3-3d-manual/`
+- **Online:** po zapnutí GitHub Pages na `https://root-code-11.github.io/t3-3d-manual/`
 - **Lokálně / locally:** stránka načítá model ze souboru, proto ji otevřete přes lokální server, ne dvojklikem:
 
 ```
