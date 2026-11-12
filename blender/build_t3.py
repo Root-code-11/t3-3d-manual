@@ -391,6 +391,18 @@ mat('lining', (0.70, 0.68, 0.60), rough=0.5)
 mat('ceiling', (0.80, 0.79, 0.74), rough=0.6)
 mat('cab', (0.15, 0.19, 0.17), rough=0.5)
 mat('tube', (1.0, 0.98, 0.94), rough=0.2, emit=(1, 0.97, 0.9), emit_strength=0.6)
+mat('redpaint', (0.565, 0.0144, 0.0129), rough=0.35, coat=0.12)        # small loose red parts (livery red)
+mat('lettering', (0.80, 0.71, 0.47), rough=0.4, coat=0.3)            # cream boarding signs (coloured elevation)
+def mat_img(name, path, rough=0.4, coat=0.0):
+    m = mat(name, rough=rough, coat=coat)
+    nt = m.node_tree
+    n = nt.nodes.new('ShaderNodeTexImage')
+    n.image = bpy.data.images.load(path, check_existing=True)
+    nt.links.new(n.outputs['Color'], nt.nodes['Principled BSDF'].inputs['Base Color'])
+    return m
+EMBLEM = os.path.join(TEX, 'emblem.png')
+TT.emblem(EMBLEM, 1024)
+mat_img('emblem', EMBLEM, rough=0.35, coat=0.3)
 TILED = {'cast': 0.5, 'rubber': 0.4, 'floor': 0.6, 'mat_roof': 0.6, 'leather_red': 0.4, 'leather_grey': 0.4}
 
 FONT_NUM = bpy.data.fonts.load(os.path.join(HERE, 'fonts', 'DejaVuSerif-Bold.ttf'))
@@ -769,10 +781,32 @@ for pid, x0, x1 in DOOR_SPANS:                        # grab handle on the body 
     rod(f'{pid}.handle', [a, a + nn * 0.045, b + nn * 0.045, b], 0.011, 'chrome')
     # brown step plate under the doorway (coloured elevation)
     box(f'{pid}.step_plate', ((x0 + x1) / 2, 0.315, 1.215), (x1 - x0 + 0.04, 0.035, 0.07), 'brown', bevel=0.004)
-for side in (1, -1):                                  # fleet number in gold on both sides (coloured elevation)
-    p = surf(2.28, u_of_y(1.32), side) + Vector((0, 0, side * 0.0012))
-    text_mesh(f'side_number.{side}', NUMBER, 0.13, p, Vector((side, 0, 0)), Vector((0, 1, 0)), 'gold',
+# fleet number in gold on both sides, digits ~0.14 m high; behind the middle of the front door-side
+# window run on the right, under the third window on the left (coloured elevations)
+for side, xn in ((1, 2.29), (-1, 2.99)):
+    p = surf(xn, u_of_y(1.22), side) + Vector((0, 0, side * 0.0012))
+    text_mesh(f'side_number.{side}', NUMBER, 0.19, p, Vector((side, 0, 0)), Vector((0, 1, 0)), 'gold',
               extrude=0.0006, font=FONT_NUM)
+    # Prague coat of arms in a round badge behind the middle of the car (coloured elevations)
+    xe = -3.04 if side == 1 else -2.94
+    c = surf(xe, u_of_y(1.22), side) + Vector((0, 0, side * 0.0014))
+    bm = bmesh.new()
+    uvl = bm.loops.layers.uv.new()
+    n_e, R_e = 48, 0.12
+    ring = [bm.verts.new(c + Vector((side * R_e * math.cos(2 * math.pi * k / n_e), R_e * math.sin(2 * math.pi * k / n_e), 0))) for k in range(n_e)]
+    mid = bm.verts.new(c)
+    for k in range(n_e):
+        fc = bm.faces.new([mid, ring[k], ring[(k + 1) % n_e]])
+        for l in fc.loops:
+            d = (l.vert.co - c) / R_e
+            l[uvl].uv = (0.5 + 0.5 * side * d.x, 0.5 + 0.5 * d.y)
+    finish(bm, f'emblem.{side}', 'emblem', smooth=False)
+# boarding signs on the door side (coloured elevation): VÝSTUP (exit) behind the rear and middle
+# doors, VSTUP (entry) behind the front door
+for i, (word, xw) in enumerate((('VÝSTUP', -4.17), ('VÝSTUP', 0.44), ('VSTUP', 4.16))):
+    p = surf(xw, u_of_y(1.45), 1) + Vector((0, 0, 0.0012))
+    text_mesh(f'sign.{i}', word, 0.17, p, Vector((1, 0, 0)), Vector((0, 1, 0)), 'lettering',
+              extrude=0.0005, font=FONT_SIGN)
     # amber side lamp on the window pillar nearest x = 3.0
     wins = sorted(WIN_R if side == 1 else WIN_L)
     gaps = [((wins[i][1] + wins[i + 1][0]) / 2) for i in range(len(wins) - 1) if wins[i + 1][0] - wins[i][1] < 0.3]
@@ -787,8 +821,8 @@ for side in (1, -1):                                  # fleet number in gold on 
 # under the floor
 bm_back, bm_slat = bmesh.new(), bmesh.new()
 for k in range(3):
-    gx0 = -1.37 + k * 0.445
-    gx1 = gx0 + 0.41
+    gx0 = -1.405 + k * 0.475
+    gx1 = gx0 + 0.445
     zc = -(1.25 + 0.006)
     box_into(bm_back, ((gx0 + gx1) / 2, 1.06, zc), (gx1 - gx0, 0.46, 0.008), 0.003)
     for j in range(12):
@@ -797,6 +831,13 @@ for k in range(3):
                  rot=Matrix.Rotation(math.radians(35), 3, 'X'))
 finish(bm_back, 'grille.back', 'under', sharp=50)
 fixed_uv(finish(bm_slat, 'grille.slats', 'paint', sharp=50), (0.5, 0.40 + 0.30 * 0.40))
+# one bright frame with rounded corners round all three bays (coloured elevation)
+_g = []
+for (cx, cy, a0) in ((0.015 - 0.05, 1.31 - 0.05, 0), (-1.43 + 0.05, 1.31 - 0.05, 90), (-1.43 + 0.05, 0.81 + 0.05, 180), (0.015 - 0.05, 0.81 + 0.05, 270)):
+    for k in range(7):
+        a = math.radians(a0 + 15 * k)
+        _g.append((cx + 0.05 * math.cos(a), cy + 0.05 * math.sin(a), -(1.25 + 0.010)))
+sweep('grille.frame', _g, 0.010, 'chrome', seg=8, closed=True)
 
 # ============================================================================== glass (one object)
 part('glass', explode=(0, 1.3, 0))
@@ -897,6 +938,17 @@ def bumper(name, E, y=0.69, half=1.20, out=0.035, th=0.05, h=0.08, n=72, materia
 
 bumper('bumper_front', FRONT)
 
+def flap(name, E, f):
+    """Small rectangular flap in the middle of the end, just under the belt (front and rear elevations)."""
+    p = nose(E, 0.0, 1.505)
+    n = normal(f, 0.0, 1.505)
+    for nm, size, push, mt in ((f'{name}.seam', (0.004, 0.135, 0.305), 0.0, 'under'), (f'{name}.lid', (0.006, 0.125, 0.295), 0.002, 'redpaint')):
+        bm = bmesh.new()
+        box_into(bm, (0, 0, 0), size, 0.002)
+        bmesh.ops.transform(bm, matrix=Matrix.Translation(p + n * push) @ Vector((1, 0, 0)).rotation_difference(n).to_matrix().to_4x4(), verts=bm.verts)
+        finish(bm, nm, mt, sharp=50)
+flap('front_flap', FRONT, fz)
+
 for s in (1, -1):                                     # marker lamps on stalks at the cab corners
     p = nose(FRONT, s * 1.20, 1.78)
     n = (normal(fz, s * 0.93, 1.78) + Vector((0, 0, s * 0.8))).normalized()
@@ -906,7 +958,7 @@ for s in (1, -1):                                     # marker lamps on stalks a
 
 FACE_X, FACE_Y = Vector((0, 0, -1)), Vector((0, 1, 0))
 p = nose(FRONT, 0.0, 1.10)
-text_mesh('fleet_number', NUMBER, 0.17, p + Vector((0.0012, 0, 0)), FACE_X, FACE_Y, 'gold', extrude=0.0008, font=FONT_NUM)
+text_mesh('fleet_number', NUMBER, 0.18, p + Vector((0.0012, 0, 0)), FACE_X, FACE_Y, 'gold', extrude=0.0008, font=FONT_NUM)
 if '--tatra' in ARGS:
     p = nose(FRONT, 0.0, 0.92)
     text_mesh('tatra_lettering', 'TATRA', 0.11, p + Vector((0.004, 0, 0)), FACE_X, FACE_Y, 'chrome', extrude=0.006)
@@ -918,12 +970,20 @@ cyl('horn.body', (6.22, 0.27, 0.55), (6.35, 0.27, 0.55), 0.03, 'darkmetal', seg=
 # ============================================================================== headlights, mirror
 part('headlights', explode=(1.5, 1.3, 0))
 for s in (1, -1):
-    z, y = s * 0.66, 1.03                            # front elevation of the coloured drawing
+    z, y = s * 0.52, 1.10                            # front elevation: 1.04 m apart, centres 1.10 m up, ~200 mm
     p = nose(FRONT, z, y)
     n = normal(fz, z / 1.2, y)
-    fixed_uv(cyl(f'headlamp.body.{s}', p - n * 0.02, p + n * 0.06, 0.12, 'paint', seg=40, bevel=0.01), (0.5, 0.82))
-    cyl(f'headlamp.rim.{s}', p + n * 0.058, p + n * 0.076, 0.118, 'chrome', seg=40, bevel=0.006)
-    cyl(f'headlamp.lens.{s}', p + n * 0.076, p + n * 0.094, 0.10, 'lens', seg=40, r2=0.077)
+    fixed_uv(cyl(f'headlamp.body.{s}', p - n * 0.02, p + n * 0.05, 0.10, 'paint', seg=40, bevel=0.01), (0.5, 0.82))
+    cyl(f'headlamp.rim.{s}', p + n * 0.048, p + n * 0.064, 0.099, 'chrome', seg=40, bevel=0.006)
+    cyl(f'headlamp.lens.{s}', p + n * 0.064, p + n * 0.080, 0.084, 'lens', seg=40, r2=0.066)
+    # upright oval position lamp at the front corner, just under the belt (front and side elevations)
+    z2, y2 = s * 0.90, 1.41
+    p = nose(FRONT, z2, y2)
+    n = normal(fz, z2 / 1.2, y2)
+    bm = bmesh.new()
+    cyl_into(bm, p - n * 0.006, p + n * 0.016, 0.03, 24, bevel=0.005)
+    bmesh.ops.scale(bm, vec=Vector((0.85, 2.2, 0.85)), space=Matrix.Translation(-p), verts=bm.verts)
+    finish(bm, f'position_lamp.{s}', 'lamp', sharp=50)
 
 part('mirror', explode=(1.0, 1.3, 0.6))
 a = surf(5.97, u_of_y(1.90), 1)
@@ -937,6 +997,7 @@ part('rear_mask', explode=(-1.0, 1.3, 0))
 mask(REAR, REAR_HOLES)
 flush('rear_mask')
 bumper('bumper_rear', REAR)
+flap('rear_flap', REAR, rz)
 for s in (1, -1):                                     # paired tail and indicator lamps (coloured rear elevation)
     for z, mt in ((s * 0.36, 'redlens'), (s * 0.48, 'amber')):
         p = nose(REAR, z, 1.00)
@@ -945,8 +1006,8 @@ for s in (1, -1):                                     # paired tail and indicato
         cyl_into(bm, p - n * 0.01, p + n * 0.025, 0.04, 24, bevel=0.006)
         bmesh.ops.scale(bm, vec=Vector((1.0, 0.7, 1.6)), space=Matrix.Translation(-p), verts=bm.verts)
         finish(bm, f'rearlamp.{s}.{mt}', mt, sharp=50)
-p = nose(REAR, 0.0, 1.13)
-text_mesh('rear_number', NUMBER, 0.15, p - Vector((0.0012, 0, 0)), Vector((0, 0, 1)), FACE_Y, 'gold', extrude=0.0008, font=FONT_NUM)
+p = nose(REAR, 0.0, 1.08)
+text_mesh('rear_number', NUMBER, 0.17, p - Vector((0.0012, 0, 0)), Vector((0, 0, 1)), FACE_Y, 'gold', extrude=0.0008, font=FONT_NUM)
 
 # ============================================================================== doors (four-leaf folding)
 LEAF_T = 0.035
@@ -1057,8 +1118,8 @@ for fc in bm.faces:
         fc.normal_flip()
 finish(bm, 'floor', 'floor', smooth=False)
 
-# 25 seats (Wikipedia): doubles on the left, singles on the right, alternating red and grey
-# leatherette on chrome tube frames; the heaters sit in the seat pedestals (Wikipedia).
+# Single seats on both sides (1 + 1) as in the plan of the coloured type drawing, red leatherette on
+# chrome tube frames; the heaters sit in the seat pedestals (Wikipedia).
 SEAT_Y = FLOOR + 0.42
 def seat(name, x, zc, width, material):
     box(f'{name}.cushion', (x, SEAT_Y, zc), (0.44, 0.09, width), material, bevel=0.03)
@@ -1066,17 +1127,28 @@ def seat(name, x, zc, width, material):
     box(f'{name}.heater', (x - 0.03, FLOOR + 0.19, zc), (0.30, 0.36, width - 0.10), 'darkmetal', bevel=0.01)
     for dz in (-width / 2 + 0.03, width / 2 - 0.03):
         rod(f'{name}.frame.{dz:.2f}', [(x + 0.2, SEAT_Y - 0.05, zc + dz), (x - 0.25, SEAT_Y - 0.05, zc + dz),
-                                       (x - 0.28, SEAT_Y + 0.56, zc + dz)], 0.011, 'chrome', seg=10)
-    cyl(f'{name}.grab', (x - 0.28, SEAT_Y + 0.56, zc - width / 2 + 0.03), (x - 0.28, SEAT_Y + 0.56, zc + width / 2 - 0.03), 0.011, 'chrome', seg=10)
-# Seats as drawn in the plan of the type drawing: 13 singles along the left side, double seats on the
-# door side (3 between the rear and middle door, 5 between the middle and front door) and a single seat
-# beside the front and rear doors. (Wikipedia gives 25 seats for the Prague cars; the plan shows more.)
-for i, x in enumerate((-4.39, -3.69, -2.99, -2.25, -1.55, -0.85, -0.15, 0.59, 1.29, 2.01, 2.71, 3.45, 4.19)):
-    seat(f'seat.L{i}', x, -0.86, 0.44, ('leather_red', 'leather_grey')[i % 2])
-for i, x in enumerate((-3.64, -2.92, -2.14, 0.33, 1.03, 1.73, 2.43, 3.13)):
-    seat(f'seat.D{i}', x, 0.66, 0.86, ('leather_grey', 'leather_red')[i % 2])
-for i, x in enumerate((-4.40, 4.06)):
-    seat(f'seat.S{i}', x, 0.90, 0.44, 'leather_red')
+                                       (x - 0.28, SEAT_Y + 0.56, zc + dz)], 0.011, 'chrome', seg=8)
+    cyl(f'{name}.grab', (x - 0.28, SEAT_Y + 0.56, zc - width / 2 + 0.03), (x - 0.28, SEAT_Y + 0.56, zc + width / 2 - 0.03), 0.011, 'chrome', seg=8)
+# Seat positions scaled off the plan (front to the right, 130 px per metre): 14 along the left side,
+# 9 on the door side (4 between the rear and middle door, 2 + 3 either side of the conductor's place).
+SEATS_L = (-5.70, -4.94, -4.20, -3.45, -2.72, -1.97, -1.21, -0.47, 0.28, 1.03, 1.78, 2.53, 3.27, 4.03)
+SEATS_R = (-4.20, -3.47, -2.74, -1.98, 0.38, 1.09, 2.58, 3.34, 4.24)
+for i, x in enumerate(SEATS_L):
+    seat(f'seat.L{i}', x, -0.86 if i else -0.82, 0.44, 'leather_red')
+for i, x in enumerate(SEATS_R):
+    seat(f'seat.R{i}', x, 0.86, 0.44, 'leather_red')
+# conductor's place on the door side between the middle and front door (plan): a seat facing the
+# aisle behind a small desk, framed by chrome rails
+XC = 1.86
+box('conductor.cushion', (XC, SEAT_Y + 0.08, 0.92), (0.42, 0.09, 0.42), 'leather_red', bevel=0.03)
+box('conductor.back', (XC, SEAT_Y + 0.40, 1.14), (0.42, 0.50, 0.07), 'leather_red', bevel=0.03)
+cyl('conductor.post', (XC, FLOOR, 0.92), (XC, SEAT_Y + 0.03, 0.92), 0.035, 'darkmetal', seg=16)
+box('conductor.desk', (XC, FLOOR + 0.50, 0.50), (0.62, 1.00, 0.22), 'umakart', bevel=0.012)
+box('conductor.desk_top', (XC, FLOOR + 1.015, 0.52), (0.66, 0.03, 0.28), 'umakart', bevel=0.008)
+for k in range(4):                                    # ticket holders on the desk (plan)
+    box(f'conductor.tickets.{k}', (XC - 0.225 + k * 0.15, FLOOR + 1.06, 0.48), (0.11, 0.06, 0.10), 'darkmetal', bevel=0.006)
+for xx in (XC - 0.33, XC + 0.33):
+    rod(f'conductor.rail.{xx:.2f}', [(xx, FLOOR, 0.40), (xx, FLOOR + 1.05, 0.40), (xx, FLOOR + 1.05, 1.18)], 0.014, 'chrome', seg=12)
 for zz in (-0.42, 0.42):
     cyl(f'handrail.{zz}', (-5.9, 2.28, zz), (5.45, 2.28, zz), 0.014, 'chrome', seg=12)
     for x in (-5.6, -3.9, -2.2, -0.5, 1.2, 2.9, 4.6):
@@ -1087,20 +1159,20 @@ for zz in (-0.50, 0.50):
     for x in (-5.0, -3.2, -1.4, 0.4, 2.2, 4.0):
         box(f'lampcase.{zz}.{x}', (x, 2.935, zz), (1.24, 0.03, 0.12), 'lamp', bevel=0.006)
         box(f'tube.{zz}.{x}', (x, 2.915, zz), (1.18, 0.012, 0.09), 'tube', bevel=0.004)
-CZ = -0.45
-box('cab.desk', (6.40, FLOOR + 0.33, CZ), (0.40, 0.66, 0.95), 'cab', bevel=0.02)
-box('cab.desk_top', (6.34, FLOOR + 0.70, CZ), (0.44, 0.06, 0.99), 'cab', bevel=0.015, rot=rot_z(-12))
+CZ = -0.20                                            # driver's seat and desk (plan)
+box('cab.desk', (6.40, FLOOR + 0.33, CZ + 0.10), (0.40, 0.66, 1.25), 'cab', bevel=0.02)
+box('cab.desk_top', (6.34, FLOOR + 0.70, CZ + 0.10), (0.44, 0.06, 1.29), 'cab', bevel=0.015, rot=rot_z(-12))
 cyl('cab.controller', (6.32, FLOOR + 0.73, CZ + 0.28), (6.32, FLOOR + 0.80, CZ + 0.28), 0.06, 'darkmetal', seg=24, bevel=0.006)
 cyl('cab.controller_handle', (6.32, FLOOR + 0.80, CZ + 0.28), (6.27, FLOOR + 0.86, CZ + 0.34), 0.012, 'chrome', seg=10)
 for i, dz in enumerate((-0.30, -0.14, 0.02)):
     box(f'cab.dial.{i}', (6.46, FLOOR + 0.82, CZ + dz), (0.02, 0.10, 0.10), 'darkmetal', bevel=0.004)
-box('cab.seat.cushion', (5.86, FLOOR + 0.50, CZ), (0.46, 0.09, 0.48), 'leather_grey', bevel=0.03)
-box('cab.seat.back', (5.60, FLOOR + 0.82, CZ), (0.07, 0.56, 0.46), 'leather_grey', bevel=0.03)
-cyl('cab.seat.post', (5.86, FLOOR, CZ), (5.86, FLOOR + 0.46, CZ), 0.04, 'darkmetal', seg=16)
+box('cab.seat.cushion', (5.74, FLOOR + 0.50, CZ), (0.46, 0.09, 0.48), 'leather_grey', bevel=0.03)
+box('cab.seat.back', (5.48, FLOOR + 0.82, CZ), (0.07, 0.56, 0.46), 'leather_grey', bevel=0.03)
+cyl('cab.seat.post', (5.74, FLOOR, CZ), (5.74, FLOOR + 0.46, CZ), 0.04, 'darkmetal', seg=16)
 for i, dz in enumerate((-0.20, 0.0, 0.20)):          # the T3 is driven with three pedals
     box(f'cab.pedal.{i}', (6.16, FLOOR + 0.05, CZ + dz), (0.22, 0.03, 0.10), 'rubber', bevel=0.006, rot=rot_z(-15))
-box('cab.partition', (5.45, FLOOR + 0.55, -0.30), (0.03, 1.10, 1.78), 'lining', bevel=0.005,
-    rot=Matrix.Rotation(math.radians(-8), 3, 'Y'))
+box('cab.partition', (5.12, FLOOR + 0.55, -0.42), (0.03, 1.10, 1.62), 'lining', bevel=0.005,
+    rot=Matrix.Rotation(math.radians(31), 3, 'Y'))   # diagonal, from the left wall towards the front door (plan)
 flush('interior')
 
 # ============================================================================== roof
@@ -1115,8 +1187,21 @@ for i, (x0, x1) in enumerate(((-6.04, -4.94), (-1.34, -0.24), (4.40, 5.56))):   
 part('roof_equipment', explode=(0, 2.1, 0))
 box('roof_hatch', (0.22, H_ROOF + 0.06, 0), (0.52, 0.12, 0.58), 'roofgrey', bevel=0.025)          # centre hatch
 box('roof_hatch.lid', (0.22, H_ROOF + 0.125, 0), (0.56, 0.02, 0.62), 'roofgrey', bevel=0.008)
-for zz in (-0.45, 0.45):                              # walkway beside the pantograph (coloured elevation)
-    box(f'walkway.{zz}', (1.78, H_ROOF + 0.006, zz), (1.58, 0.02, 0.24), 'mat_roof', bevel=0.004)
+for zz in (-0.66, 0.66):                              # dark insulating mats along the pantograph (coloured elevations)
+    box(f'roof_mat.{zz}', (2.585, 3.000, zz), (2.93, 0.016, 0.26), 'rubber', bevel=0.004,
+        rot=Matrix.Rotation(math.radians(7 if zz > 0 else -7), 3, 'X'))
+# low cover behind the pantograph, high at the front and sloping down to the rear (both elevations,
+# front and rear view: about 0.6 m wide, top ~3.38 m above rail); contents not stated in the sources
+bm = bmesh.new()
+_prof = [(2.36, 3.03), (2.36, 3.36), (2.33, 3.38), (1.68, 3.38), (1.06, 3.12), (1.04, 3.03)]
+_vs = [[bm.verts.new((x, y, z)) for x, y in _prof] for z in (-0.30, 0.30)]
+bm.faces.new(list(reversed(_vs[0])))
+bm.faces.new(_vs[1])
+for k in range(len(_prof)):
+    bm.faces.new([_vs[0][k], _vs[0][(k + 1) % len(_prof)], _vs[1][(k + 1) % len(_prof)], _vs[1][k]])
+bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+bmesh.ops.bevel(bm, geom=[e for e in bm.edges if e.calc_face_angle(0) > math.radians(20)], offset=0.025, segments=3, affect='EDGES', profile=0.5)
+finish(bm, 'roof_cover', 'grey', sharp=50)
 cyl('roof_mast', (5.72, H_ROOF, 0), (5.72, H_ROOF + 0.16, 0), 0.012, 'roofgrey', seg=10)            # small mast near the front
 cyl('roof_mast.bar', (5.72, H_ROOF + 0.16, -0.10), (5.72, H_ROOF + 0.16, 0.10), 0.010, 'roofgrey', seg=8)
 
@@ -1130,13 +1215,15 @@ for sx in (-1, 1):
         bm = bmesh.new()
         for k in range(4):
             yk = H_ROOF + 0.02 + k * 0.025
-            cyl_into(bm, (X0 + sx * 0.42, yk, sz * 0.40), (X0 + sx * 0.42, yk + 0.02, sz * 0.40), 0.048 if k % 2 == 0 else 0.036, 20, bevel=0.004)
+            cyl_into(bm, (X0 + sx * 0.42, yk, sz * 0.45), (X0 + sx * 0.42, yk + 0.02, sz * 0.45), 0.048 if k % 2 == 0 else 0.036, 20, bevel=0.004)
         finish(bm, f'insulator.{sx}{sz}', 'insulator', sharp=60)
-box('base.frame', (X0, H_ROOF + 0.13, 0), (0.98, 0.04, 0.90), 'darkmetal', bevel=0.01)
+box('base.frame', (X0, H_ROOF + 0.13, 0), (0.98, 0.04, 1.16), 'darkmetal', bevel=0.01)
 Y_BASE = H_ROOF + 0.17
-HGT, HW = 1.50, 1.12                                  # raised height and half span of the diamond (ASSUMED)
-Y_MID, Y_TOP = Y_BASE + HGT / 2, Y_BASE + HGT
-ZF = 0.42                                             # the two frames (front elevation)
+# Scaled off the coloured elevations, where the pantograph is drawn raised to the wire at ~5.0 m:
+# knees ~3.99 m above rail and 1.52 m either side of the centre, the two frames 1.06 m apart.
+HW = 1.52
+Y_MID, Y_TOP = 3.99, 4.905
+ZF = 0.53
 for sz in (-1, 1):
     zz = sz * ZF
     rod(f'diamond.{sz}', [(X0, Y_BASE, zz), (X0 - HW, Y_MID, zz), (X0, Y_TOP, zz), (X0 + HW, Y_MID, zz), (X0, Y_BASE, zz)],
@@ -1155,7 +1242,7 @@ for sx in (-1, 1):                                    # pan head: two bows with 
     cyl(f'pan.bow.{sx}', (xb, Y_TOP + 0.05, -0.70), (xb, Y_TOP + 0.05, 0.70), 0.016, 'panto', seg=12)
     box(f'pan.strip.{sx}', (xb, Y_TOP + 0.075, 0), (0.035, 0.02, 1.30), 'copper', bevel=0.004)
     for sz in (-1, 1):
-        rod(f'pan.horn.{sx}{sz}', [(xb, Y_TOP + 0.05, sz * 0.70), (xb, Y_TOP + 0.02, sz * 0.84), (xb, Y_TOP - 0.08, sz * 0.92)], 0.015, 'panto')
+        rod(f'pan.horn.{sx}{sz}', [(xb, Y_TOP + 0.05, sz * 0.70), (xb, Y_TOP + 0.02, sz * 0.79), (xb, Y_TOP - 0.08, sz * 0.82), (xb, Y_TOP - 0.17, sz * 0.78)], 0.015, 'panto')
     rod(f'pan.strut.{sx}', [(X0, Y_TOP, -0.25), (xb, Y_TOP + 0.05, -0.30)], 0.010, 'panto', seg=8)
     rod(f'pan.strut2.{sx}', [(X0, Y_TOP, 0.25), (xb, Y_TOP + 0.05, 0.30)], 0.010, 'panto', seg=8)
 for sz in (-1, 1):
@@ -1262,6 +1349,21 @@ for pid, s in (('coupler_front', 1), ('coupler_rear', -1)):
     box(f'{pid}.head_cap', (tip - s * 0.05, 0.50, 0), (0.13, 0.09, 0.17), 'grey', bevel=0.025)
     chain = [(tip - s * (0.1 + 0.025 * k), 0.47 - 0.09 * math.sin(math.pi * k / 12), 0.08) for k in range(13)]
     sweep(f'{pid}.chain', chain, 0.006, 'steel', seg=6)
+
+# ============================================================================== plate under the front end
+# Drawn in both elevations and the front view: a plate about 1.8 m wide hanging under the front end
+# between the front bogie and the coupler, sloping from ~0.30 m above rail at the rear edge to ~0.12 m
+# at the front. Its purpose is not stated in the sources.
+part('guard_plate', explode=(0.8, -0.25, 0))
+_gp = lambda x: 0.30 - 0.18 * (x - 4.66) / (6.35 - 4.66)
+_ang = math.degrees(math.atan2(0.18, 6.35 - 4.66))
+box('guard_plate.sheet', ((4.66 + 6.35) / 2, _gp(5.505), 0), (1.70, 0.012, 1.80), 'cast', bevel=0.004,
+    rot=rot_z(-_ang))
+box('guard_plate.lip', (6.35, 0.12, 0), (0.03, 0.05, 1.80), 'cast', bevel=0.006)
+for xb in (4.80, 6.15):
+    for zb in (-0.75, 0.75):
+        box(f'guard_plate.hanger.{xb}.{zb}', (xb, (_gp(xb) + BODY_BOTTOM) / 2 + 0.01, zb),
+            (0.05, BODY_BOTTOM - _gp(xb) + 0.02, 0.012), 'darkmetal', bevel=0.003)
 
 # ============================================================================== export
 def kids(e):
@@ -1484,7 +1586,8 @@ if '--render' in ARGS or '--checks' in ARGS:
             bpy.ops.render.render(write_still=True)
         if 'side' in shots: shot('check_side.png', (0, 1.6, 30), (0, 1.6, 0), ortho=16.0)
         if 'left' in shots: shot('check_left.png', (0, 1.6, -30), (0, 1.6, 0), ortho=16.0)
-        if 'fortho' in shots: shot('check_fortho.png', (40, 1.6, 0), (0, 1.6, 0), ortho=4.6)
+        if 'fortho' in shots: shot('check_fortho.png', (40, 1.6, 0), (0, 1.6, 0), ortho=6.4)
+        if 'rortho' in shots: shot('check_rortho.png', (-40, 1.6, 0), (0, 1.6, 0), ortho=6.4)
         if 'q34' in shots: shot('check_34.png', (12.2, 1.45, 6.4), (2.6, 1.55, -0.3), lens=38)
         if 'front' in shots: shot('check_front.png', (9.5, 1.7, 0.6), (6.5, 1.5, 0.0), lens=40)
         if 'bogie' in shots: shot('check_bogie.png', (4.6, 0.55, 2.6), (3.2, 0.40, 0.6), lens=28)

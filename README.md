@@ -51,7 +51,7 @@ Coordinates: x forward, y up, z to the right, metres, origin on the rail top und
 - Wikipedia: Tatra T3 (Maruna 1974; Linert, Fojtík 2005)
 - prazsketramvaje.cz, tram-bus.cz, abczech.cz
 - Wikimedia Commons: Trams in Prague by registration number
-- Typový výkres T3 a barevné pohledy / T3 type drawing and coloured elevations
+- Typový výkres T3 a barevný výkres (oba boky, čelo, záď, půdorys) / T3 type drawing and coloured drawing (both sides, front, rear, plan)
 - Fotografie vozů 6102 a 6149 / photos of cars 6102 and 6149
 
 Inspirace / inspired by: [BMW R 12 · interaktivní 3D manuál](https://github.com/lukasersil/bmw-r12-3d-manual) (Lukáš Eršil)

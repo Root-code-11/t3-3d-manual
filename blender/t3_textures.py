@@ -280,3 +280,58 @@ def tiling_sets(out_dir, size=2048):
         paths[k] = p
         print('  painted tile', k)
     return paths
+
+
+def emblem(path, size=1024):
+    """Round badge with the small coat of arms of Prague, as on the coloured elevations: on a red shield
+    a silver city wall with three towers and an open gate with a raised golden portcullis and an
+    armoured arm holding a sword; the badge has a gold rim. Drawn at 2x and reduced."""
+    from PIL import ImageDraw
+    S = size * 2
+    im = Image.new('RGB', (S, S), (190, 30, 32))
+    d = ImageDraw.Draw(im)
+    def P(x, y):                                      # unit coordinates, y up, badge radius 1
+        return (S / 2 + x * S / 2, S / 2 - y * S / 2)
+    def poly(pts, fill, outline=(30, 20, 18), w=6):
+        d.polygon([P(*q) for q in pts], fill=fill, outline=outline, width=w)
+    def rect(x0, y0, x1, y1, fill, w=6):
+        poly([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], fill, w=w)
+    GOLD, GOLD_D, SILVER, INK, RED = (214, 170, 62), (150, 108, 30), (226, 226, 220), (28, 22, 20), (190, 30, 32)
+    d.ellipse([P(-1, 1), P(1, -1)], fill=GOLD, outline=GOLD_D, width=10)
+    d.ellipse([P(-0.86, 0.86), P(0.86, -0.86)], fill=RED, outline=INK, width=8)
+    # shield outline
+    sh = [(-0.62, 0.66), (0.62, 0.66), (0.62, -0.18)] + \
+         [(0.62 * np.cos(a), -0.18 - 0.55 * np.sin(a)) for a in np.linspace(0, np.pi, 24)] + [(-0.62, 0.66)]
+    poly(sh, RED, outline=GOLD, w=14)
+    # wall with crenellations
+    rect(-0.52, -0.52, 0.52, 0.02, SILVER)
+    for k in range(9):
+        x = -0.52 + k * 0.125
+        rect(x, 0.02, x + 0.07, 0.09, SILVER, w=4)
+    for k in range(5):                                # masonry courses
+        y = -0.42 + k * 0.09
+        d.line([P(-0.52, y), P(0.52, y)], fill=(150, 150, 146), width=3)
+    # three towers, the middle one taller, with gold-tipped roofs
+    for xc, top, w in ((-0.36, 0.34, 0.16), (0.0, 0.46, 0.20), (0.36, 0.34, 0.16)):
+        rect(xc - w / 2, 0.02, xc + w / 2, top, SILVER)
+        for k in range(3):
+            x = xc - w / 2 + k * w / 2.5
+            rect(x, top, x + w / 5, top + 0.06, SILVER, w=4)
+        rect(xc - 0.025, top - 0.16, xc + 0.025, top - 0.06, INK, w=2)    # window slit
+        poly([(xc - w / 2 - 0.01, top + 0.06), (xc + w / 2 + 0.01, top + 0.06), (xc, top + 0.20)], GOLD, w=4)
+        d.ellipse([P(xc - 0.025, top + 0.25), P(xc + 0.025, top + 0.20)], fill=GOLD, outline=INK, width=3)
+    # open gate with the raised portcullis
+    gate = [(-0.17, -0.52), (-0.17, -0.18)] + [(0.17 * np.cos(a), -0.18 + 0.17 * np.sin(a)) for a in np.linspace(np.pi, 0, 16)] + [(0.17, -0.52)]
+    poly(gate, (40, 28, 24))
+    for k in range(5):
+        x = -0.13 + k * 0.065
+        d.line([P(x, -0.03), P(x, -0.22)], fill=GOLD, width=7)
+    for y in (-0.08, -0.16):
+        d.line([P(-0.15, y), P(0.15, y)], fill=GOLD, width=7)
+    # armoured arm holding a sword in the gateway
+    poly([(-0.17, -0.42), (-0.03, -0.30), (0.01, -0.35), (-0.15, -0.48)], SILVER, w=4)
+    rect(-0.02, -0.38, 0.05, -0.29, SILVER, w=4)
+    rect(0.005, -0.29, 0.025, 0.05, SILVER, w=4)                         # blade
+    rect(-0.05, -0.30, 0.08, -0.27, GOLD, w=3)                           # cross guard
+    im = im.resize((size, size), Image.LANCZOS)
+    im.save(path)
