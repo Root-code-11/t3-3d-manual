@@ -134,16 +134,16 @@ def features(v, model):
     if e:
         put('windscreen left edge', e[0]); put('windscreen right edge', e[1]); put('windscreen width', e[1] - e[0])
     for zz in (-0.45, 0.45):
-        e = v.col_edges(glass, zz, 1.55, 2.62)
+        e = v.col_edges(glass, zz, 1.55, 2.60)          # (stops under the route sign's glass)
         if e:
             put(f'windscreen top at zv {zz:+.2f}', e[0]); put(f'windscreen bottom at zv {zz:+.2f}', e[1])
     # corner shape: glass width 20, 50 and 100 mm below the top edge
-    e = v.col_edges(glass, -0.45, 1.55, 2.62)
+    e = v.col_edges(glass, -0.45, 1.55, 2.60)
     if e:
         for dy in (0.02, 0.05, 0.10):
             w = v.row_edges(glass, e[0] - dy, -1.0, 1.0, half=1)
             if w: put(f'windscreen width {int(dy*1000)} mm below top', w[1] - w[0])
-    e = v.col_edges(glass, -0.45, 1.55, 2.62)
+    e = v.col_edges(glass, -0.45, 1.55, 2.60)
     if e:
         for dy in (0.02, 0.05):
             w = v.row_edges(glass, e[1] + dy, -1.0, 1.0, half=1)

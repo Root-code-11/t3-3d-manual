@@ -23,7 +23,21 @@ UNDER = srgb((34, 32, 30))
 DIRT = srgb((92, 82, 66))          # road dust and brake dust, brown-grey
 SOOT = srgb((70, 68, 66))          # graphite dust from the pantograph contact strips
 DUST = srgb((178, 170, 152))
-ROOF = srgb((92, 92, 90))          # grey roof between the cream end domes (coloured drawing)
+ROOF = srgb((146, 144, 116))       # light olive-grey roof between the cream end domes (coloured elevations)
+SEAM = srgb((70, 62, 50))
+
+def roof_lower(X, side):
+    """Height above which the roof colour starts, along the body (coloured elevations): down to the gutter
+    (2.605 m) along the middle; on the left only above 2.815 m for |x| > 3.24 m, rising in a rounded step
+    from 3.04 m. Ends: the colour stops at |x| = 6.17 m with a small rounded corner."""
+    ax = np.abs(X)
+    y = np.full(X.shape, 2.605, np.float32)
+    if side == -1:
+        t = np.clip((3.24 - ax) / 0.20, 0, 1)
+        y = np.where(ax > 3.04, 2.605 + 0.21 * np.sqrt(np.maximum(0, 1 - t * t)), y)
+    d = np.clip((ax - 6.11) / 0.06, 0, 1)
+    y = y + (2.95 - y) * (1 - np.sqrt(np.maximum(0, 1 - d * d))) * (ax < 6.17)
+    return np.where(ax >= 6.17, 99.0, y)
 
 def smooth(t):
     t = np.clip(t, 0.0, 1.0)
@@ -127,11 +141,11 @@ def paint_side(L, side, H, W, seed):
     col = livery(Y, L)
     under = U < L['u_bottom']
     col[under] = UNDER
-    # side elevation: the grey roof comes down to 2.66 m, just above the gutter, and sweeps up in a rounded
-    # corner at both ends where the cream domes begin
-    dx = np.clip(np.abs(X) - (L['XS'] - 0.05 - 0.30), 0, 0.30)
-    y_grey = 2.66 + 0.40 * (1 - np.sqrt(np.maximum(0, 1 - (dx / 0.30) ** 2)))
-    col[Y > y_grey] = ROOF
+    col[Y > roof_lower(X, side)] = ROOF
+    if side == -1:                                                 # skirt panel joints and the mask joints
+        for sx in list(L['SKIN_SEAMS_L']):
+            on = (np.abs(X - sx) < 0.003) & (Y < 0.750) & (Y > L['BODY_BOTTOM'])
+            col[on] = SEAM
     roof = smooth((U - L['u_roof']) / 0.04)
     rough = np.full((H, W), 0.36, np.float32)
     ao = np.ones((H, W), np.float32)
@@ -168,8 +182,26 @@ def paint_mask(L, end, H, W, seed):
         R = L['BELT'] - 1.48
         d = np.clip(np.abs(A) - (a_end - R), 0, R)
         top = 1.48 + R - np.sqrt(np.maximum(R * R - d * d, 0))
+        # left elevation: on the left the stripe under the beading is deeper on the side (bottom 1.515 m)
+        # and turns up ~0.06 m ahead of the joint
+        topL = 1.48 + 0.035 * smooth((np.abs(A) - 0.88) / 0.15)
+        RL = L['BELT'] - 1.515
+        dL = np.clip(np.abs(A) - (a_end - 0.095 - RL), 0, RL)
+        topL = np.where(np.abs(A) > a_end - 0.095 - RL, 1.515 + RL - np.sqrt(np.maximum(RL * RL - dL * dL, 0)), topL)
+        top = np.where(A < 0, topL, top)
         band = (Y >= top) & (Y < L['BELT'] + 0.06)
         col[band] = CREAM
+    # roof colour on the mask where it is still behind |x| = 6.17 m (side elevations)
+    Xm = np.zeros((H, W), np.float32)
+    for i in range(H):
+        j = int(np.clip(np.searchsorted(E['y'], y_row[i]), 1, len(E['y']) - 1))
+        w = float(np.clip((y_row[i] - E['y'][j - 1]) / max(1e-9, E['y'][j] - E['y'][j - 1]), 0, 1))
+        Xm[i] = (1 - w) * np.interp(A[i], E['A'][j - 1], E['X'][j - 1]) + w * np.interp(A[i], E['A'][j], E['X'][j])
+    for sd in (1, -1):
+        sel = (Y > roof_lower(Xm, sd)) & ((A > 0) if sd == 1 else (A < 0))
+        col[sel] = ROOF
+    xj = 6.019 if end == 'front' else 5.989                        # end skirt panel joints on the left (left elevation)
+    col[(A < 0) & (np.abs(Xm - xj) < 0.0045) & (Y < 0.750) & (Y > L['BODY_BOTTOM'])] = SEAM
     roof = smooth((Y - 2.78) / 0.12)
     rough = np.full((H, W), 0.36, np.float32)
     ao = np.ones((H, W), np.float32)
