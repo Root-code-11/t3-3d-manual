@@ -30,9 +30,9 @@ sys.path.insert(0, HERE)
 
 # ============================================================================== dimensions
 L_BODY = 14.000          # body length (Wikipedia)
-L_COUPLERS = 15.104      # length over couplers (type drawing; coupler 552 mm beyond each end)
+L_COUPLERS = 15.200      # length over couplers (coloured drawing: coupler head 600 mm beyond each end)
 W_BODY = 2.500           # body width (Wikipedia)
-H_ROOF = 3.060           # roof above rail top, without pantograph (spec)
+H_ROOF = 3.028           # roof above rail top, without pantograph (coloured drawing: 3,028 mm)
 GAUGE = 1.435
 BOGIE_PIVOTS = 6.400     # bogie pivot centres (spec)
 WHEELBASE = 1.900        # bogie wheelbase (spec)
@@ -41,9 +41,9 @@ DOORS = {'6102': (1.343, 1.343, 1.343), '6101': (1.300, 1.060, 1.300)}[VARIANT]
 # Scaled off the dimensioned type drawing (side view, ~50 px per metre) and the coloured elevations:
 BODY_BOTTOM = 0.33       # lower edge of the cream skirt
 SKIRT_LIFT = 0.29        # skirt cut up to ~0.62 m over the bogies
-SKIRT = 0.76             # cream skirt / chrome strip / red band
-BELT = 1.58              # red / cream break with a maroon pinstripe
-WIN_Y0, WIN_Y1, WIN_SPLIT = 1.66, 2.54, 2.12   # side windows: sill, head, top of the fixed pane
+SKIRT = 0.80             # cream skirt / red band, hidden under the aluminium strip 0.762-0.838 m (side elevation)
+BELT = 1.608             # top of the red band, under the bright beading 1.608-1.656 m (side elevation)
+WIN_Y0, WIN_Y1, WIN_SPLIT = 1.699, 2.506, 2.25 # side windows: opening (glass 1.725-2.480 visible), top of the fixed pane
 EAVE = 2.62              # upper maroon pinstripe
 SIDE_TOP = 2.70          # where the side cells hand over to the roof
 FLOOR = 0.90             # passenger floor
@@ -57,8 +57,11 @@ ROT = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))   # tram
 
 # ============================================================================== body surface
 PROF_PTS = [(0.0, BODY_BOTTOM), (0.6, BODY_BOTTOM), (1.10, BODY_BOTTOM + 0.002), (1.20, BODY_BOTTOM + 0.022),
-            (1.24, BODY_BOTTOM + 0.07), (1.25, BODY_BOTTOM + 0.16), (1.25, 1.66), (1.237, 2.30), (1.222, 2.62),
-            (1.195, 2.72), (1.13, 2.82), (0.98, 2.925), (0.62, 3.012), (0.0, H_ROOF)]
+            (1.24, BODY_BOTTOM + 0.07), (1.25, BODY_BOTTOM + 0.16), (1.25, 1.66), (1.248, 2.30), (1.244, 2.62),
+            # roof shoulder scaled off the silhouette of the coloured front elevation (half-widths at
+            # 2.75 / 2.81 / 2.87 / 2.93 / 2.96 / 2.99 m, outline stroke taken off)
+            (1.235, 2.70), (1.219, 2.75), (1.176, 2.81), (1.110, 2.87), (0.997, 2.93), (0.904, 2.96),
+            (0.781, 2.99), (0.62, 3.004), (0.0, H_ROOF)]
 
 def catmull(pts, per=12):
     P = [Vector(p) for p in pts]
@@ -111,6 +114,8 @@ def smooth01(t):
     return t * t * (3 - 2 * t)
 
 from scipy.interpolate import PchipInterpolator
+_PR = [0.0, 0.35, 0.55, 0.68, 0.76, 0.82, 0.91, 1.0]
+_PX = [1.0, 0.99, 0.965, 0.92, 0.84, 0.70, 0.35, 0.0]
 
 class End:
     """A fibreglass end mask, from the type drawing.
@@ -119,26 +124,72 @@ class End:
     Side view: cream apron set back under the bumper, upright red panel, windscreen leaning back
     ~0.35 m, then a rounded roof dome that starts ~0.95 m behind the nose. The whole plan outline is
     scaled towards the body by k(y), so the dome and the rake never fold back past the body."""
-    def __init__(s, sign, xs=6.0, ws_top=2.53, rake=0.35, apron=0.06):
-        s.sign, s.xs, s.xt = sign, xs, HALF
+    def __init__(s, sign, xs=6.0, ws_top=2.53, rake=0.35, apron=0.06, q=1.0, plan=None, plan_win=None, xt=HALF,
+                 face_rake=0.0, low=(0.70, 0.06, 0.0), dome_p=2.0):
+        s.sign, s.xs, s.xt = sign, xs, xt
         s.ws_top, s.rake, s.apron = ws_top, rake, apron
-
-FRONT = End(+1)
-REAR = End(-1, rake=0.30)
-ENDS = (FRONT, REAR)
-XS = FRONT.xs
+        s.q = q                                       # half-width where the mask starts, share of the body's
+        s.face_rake = face_rake                       # face leans back by this much from 1.62 m down to 0.86 m
+        s.low = low                                   # skirt under the bumper: (top, setback at top, extra per metre down)
+        s.dome_p = dome_p                             # exponent of the roof dome (2 = ellipse, larger = fuller)
+        pr, px = plan if plan else (_PR, _PX)
+        s.PLAN = PchipInterpolator(pr, px)
+        s.PLAN_W = PchipInterpolator(*plan_win) if plan_win else s.PLAN
+        s.R_TAB = np.linspace(0.0, 1.0, 401)
+        s.X_TAB = s.PLAN(s.R_TAB)
+        s.X_TAB_W = s.PLAN_W(s.R_TAB)
+    def wmix(s, y0):                                  # 0 low on the face, 1 from just under the beading upwards
+        return smooth01((y0 - 1.50) / 0.10)
+    def share(s, r, y0):
+        w = s.wmix(y0)
+        return (1 - w) * float(s.PLAN(r)) + w * float(s.PLAN_W(r))
+    def r_of(s, frac, y0):
+        w = s.wmix(y0)
+        return float(np.interp(-frac, -((1 - w) * s.X_TAB + w * s.X_TAB_W), s.R_TAB))
 
 # plan outline: r = |z| / half-width (1 at the body side, 0 on the centre line) -> share of the nose length
 _PR = [0.0, 0.35, 0.55, 0.68, 0.76, 0.82, 0.91, 1.0]
 _PX = [1.0, 0.99, 0.965, 0.92, 0.84, 0.70, 0.35, 0.0]
-PLAN = PchipInterpolator(_PR, _PX)
-_R_TAB = np.linspace(0.0, 1.0, 401)
-_X_TAB = PLAN(_R_TAB)
+# Front end, traced from the plan of the coloured drawing (167.7 px/m) along the outer edge of the body
+# wall (the brown band outside it at the nose is the bumper, which the floor-level section cuts): an
+# almost flat face, then a long rounded corner back to x = 6.0 m.
+_PR_F = [0.0, 0.096, 0.287, 0.478, 0.576, 0.669, 0.724, 0.784, 0.821, 0.855, 0.889, 0.924, 0.967, 0.989, 1.0]
+_PX_F = [1.0, 1.0, 0.992, 0.973, 0.950, 0.901, 0.842, 0.737, 0.632, 0.526, 0.421, 0.316, 0.211, 0.105, 0.0]
+# The body narrows in plan from x = 4.5 m to the start of the front mask at 6.0 m, so the front door and
+# the first left window sit on angled walls. Half-width at 6.0 m: 1.05 m in the plan, 0.95-1.07 m in
+# the front elevation (strips beside the face); the model takes 1.03 m.
+TAPER_X0 = 4.50
+# At window height the cab narrows quickly behind the windscreen, so that its glass starts 0.18 m ahead
+# of the mask joint in the side elevation while keeping the front elevation's windscreen width.
+_PX_FW = [1.0, 1.0, 0.992, 0.973, 0.950, 0.90, 0.84, 0.73, 0.60, 0.42, 0.22, 0.10, 0.04, 0.012, 0.0]
+_PR_FW = [0.0, 0.096, 0.287, 0.478, 0.576, 0.669, 0.724, 0.784, 0.821, 0.855, 0.887, 0.94, 0.975, 0.992, 1.0]
+# side elevation: red face at 6.965 m leaning back to ~6.89 m at the bumper; skirt lobes curving back to
+# ~6.77 m at 0.40 m; rear face upright at 6.965 m with a fuller roof dome and little rake
+FRONT = End(+1, rake=0.32, q=0.824, plan=(_PR_F, _PX_F), plan_win=(_PR_FW, _PX_FW), xt=6.965, face_rake=0.071,
+            low=(0.735, 0.075, 0.27))
+# rear end, traced from the plan along the outer edge of the body wall (relative to its width at 6.0 m)
+_PR_R = [0.0, 0.287, 0.382, 0.473, 0.707, 0.775, 0.816, 0.849, 0.886, 0.918, 0.95, 0.978, 1.0]
+_PX_R = [1.0, 0.991, 0.979, 0.975, 0.870, 0.761, 0.652, 0.543, 0.435, 0.326, 0.217, 0.109, 0.0]
+REAR = End(-1, rake=0.10, xt=6.95, low=(0.762, 0.04, 0.44), dome_p=3.5, plan=(_PR_R, _PX_R))
+ENDS = (FRONT, REAR)
+XS = FRONT.xs
+
+
+def plan_w(x):
+    """Plan width factor of the body sides: 1, then narrowing straight towards the front mask."""
+    if x <= TAPER_X0:
+        return 1.0
+    t = min(1.0, (x - TAPER_X0) / (FRONT.xs - TAPER_X0))
+    return 1.0 - (1.0 - FRONT.q) * t
 
 def kfac(E, y0):
     """Share of the nose length left at height y0 (1 = full length)."""
-    if y0 < 0.70:
-        return 1.0 - E.apron / (E.xt - E.xs)
+    L = E.xt - E.xs
+    top, s0, per = E.low
+    if y0 < top:
+        return 1.0 - (s0 + per * (top - y0)) / L
+    if y0 < 1.45:
+        return 1.0 - E.face_rake * min(1.0, (1.45 - y0) / (1.45 - 0.86)) / L
     if y0 < 1.66:
         return 1.0
     if y0 < E.ws_top:
@@ -146,7 +197,8 @@ def kfac(E, y0):
     k0 = 1.0 - E.rake
     R = H_ROOF - E.ws_top
     t = min(1.0, (y0 - E.ws_top) / R)
-    return 0.05 + (k0 - 0.05) * math.sqrt(max(0.0, 1 - t * t))
+    p = E.dome_p
+    return 0.05 + (k0 - 0.05) * max(0.0, 1 - t ** p) ** (1 / p)
 
 def taper(y0):
     return 1.0 - 0.05 * min(1.0, max(0.0, (0.70 - y0) / (0.70 - BODY_BOTTOM)))
@@ -157,13 +209,13 @@ def skirt_lift(x):
 
 def nose_s(E, s, y0):
     """Point on an end mask: s -1..1 across (fraction of the half-width), y0 the height."""
-    zb = prof(u_of_y(y0))[0] * taper(y0)
+    zb = prof(u_of_y(y0))[0] * taper(y0) * E.q
     r = min(abs(s), 1.0)
-    x = E.xs + (E.xt - E.xs) * float(PLAN(r)) * kfac(E, y0)
+    x = E.xs + (E.xt - E.xs) * E.share(r, y0) * kfac(E, y0)
     return Vector((E.sign * x, y0, max(-1.0, min(1.0, s)) * zb))
 
 def nose(E, z, y0):
-    zb = prof(u_of_y(y0))[0] * taper(y0)
+    zb = prof(u_of_y(y0))[0] * taper(y0) * E.q
     return nose_s(E, z / zb if zb > 1e-9 else 0.0, y0)
 
 def surf(xb, u, side):
@@ -172,14 +224,14 @@ def surf(xb, u, side):
         if xb * E.sign > E.xs:
             k = kfac(E, y0)
             frac = min((xb * E.sign - E.xs) / ((E.xt - E.xs) * k), 1.0)
-            r = float(np.interp(-frac, -_X_TAB, _R_TAB))                  # invert the plan outline
+            r = E.r_of(frac, y0)                                           # invert the plan outline
             x = E.sign * (E.xs + (E.xt - E.xs) * k * frac)
-            return Vector((x, y0, side * z0 * r * taper(y0)))
+            return Vector((x, y0, side * z0 * r * taper(y0) * E.q))
     k = smooth01((abs(xb) - 5.6) / (XS - 5.6))
-    z = z0 * (1 - (1 - taper(y0)) * k)
+    z = z0 * (1 - (1 - taper(y0)) * k) * plan_w(xb)
     y = y0
-    if y0 < SKIRT:
-        y = y0 + skirt_lift(xb) * (SKIRT - y0) / (SKIRT - BODY_BOTTOM)
+    if y0 < 0.755:                                     # the cut-out over the bogies stays under the strip
+        y = y0 + skirt_lift(xb) * (0.755 - y0) / (0.755 - BODY_BOTTOM)
     return Vector((xb, y, side * z))
 
 def side_pt(side):
@@ -203,26 +255,35 @@ def normal(f, a, b, h=1e-4):
 PILLAR = 0.17
 MARGIN = 0.22                                       # from a door frame to the first window
 Y_SIDE0 = BODY_BOTTOM + 0.003
-FD0, FD1 = 5.26 - DOORS[0] / 2, 5.26 + DOORS[0] / 2
-MD0, MD1 = -0.78 - DOORS[1] / 2, -0.78 + DOORS[1] / 2
-RD0, RD1 = -5.30 - DOORS[2] / 2, -5.30 + DOORS[2] / 2
+FD0, FD1 = 5.3145 - DOORS[0] / 2, 5.3145 + DOORS[0] / 2
+MD0, MD1 = -0.7445 - DOORS[1] / 2, -0.7445 + DOORS[1] / 2
+RD0, RD1 = -5.3145 - DOORS[2] / 2, -5.3145 + DOORS[2] / 2
 DOOR_SPANS = [('door_front', FD0, FD1), ('door_middle', MD0, MD1), ('door_rear', RD0, RD1)]
 
 def win_run(x_from, x_to, n, pillar=PILLAR):
     w = (x_to - x_from - pillar * (n - 1)) / n
     return [(x_from + i * (w + pillar), x_from + i * (w + pillar) + w, WIN_Y0, WIN_Y1) for i in range(n)]
 
-# right (door) side: 3 windows between the front and middle door, 2 between the middle and rear door
-WIN_R = win_run(MD1 + MARGIN, FD0 - MARGIN, 3) + win_run(RD1 + MARGIN, MD0 - MARGIN, 2)
+# right (door) side: 2 windows between the rear and middle door, 3 between the middle and front door;
+# openings scaled off the coloured side elevation (visible glass + 26 mm gasket lip all round)
+WIN_R = [(x0, x1, WIN_Y0, WIN_Y1) for x0, x1 in ((-4.410, -3.096), (-2.933, -1.619), (0.153, 1.467), (1.631, 2.951), (3.120, 4.428))]
 # left side: 8 equal windows (coloured elevation)
 WIN_L = win_run(-5.85, 5.85, 8, pillar=0.15)
 DOOR_OPEN = [(x0, x1, Y_SIDE0 - 0.01, 2.56) for _, x0, x1 in DOOR_SPANS]
 OPEN = {1: WIN_R + DOOR_OPEN, -1: list(WIN_L)}
 # end glazing in mask units (s across, height): windscreen on the face, angled cab side windows on
 # the narrowing part; the rear end the same with a lower window
-WS_Y0, WS_Y1 = 1.68, 2.50
-FRONT_HOLES = [(-0.78, 0.78, WS_Y0, WS_Y1), (0.84, 0.975, WS_Y0, 2.46), (-0.975, -0.84, WS_Y0, 2.46)]
-REAR_HOLES = [(-0.78, 0.78, 1.70, 2.46), (0.84, 0.975, 1.70, 2.42), (-0.975, -0.84, 1.70, 2.42)]
+# Front: one large windscreen (coloured front elevation): visible glass 1,777 mm wide, 1,682-2,491 mm up;
+# the opening is cut ~26 mm larger all round because the gasket lip covers that much of the glass.
+WS_Y0, WS_Y1 = 1.664, 2.519
+S_WS = 0.906 / (1.249 * 0.824)
+WS_RC = (0.105, (0.362, 0.286))                      # corner radii of the opening: bottom, top (across, up)
+FRONT_HOLES = [(-S_WS, S_WS, WS_Y0, WS_Y1)]
+# gap between the two skirt lobes under the bumper, where the coupler sits (front elevation)
+LOBE_GAP = (-0.53, 0.53, None, 0.735)
+# rear: a centre window and two large corner windows wrapping round to the sides, divided by narrow bars
+# (side elevation: corner window glass from -6.78 to -6.21 m, the bar just behind it)
+REAR_HOLES = [(-0.65, 0.65, 1.70, 2.50), (0.712, 0.95, 1.705, 2.53), (-0.95, -0.712, 1.705, 2.53)]
 REAR_WIN = REAR_HOLES[0]
 
 def pillar_seams(wins):
@@ -712,20 +773,26 @@ def gasket(f, rect, material='rubber', edges=None, rc=0.035, ka=1.0, step=0.08, 
                 if fc.normal.dot(want) < 0:
                     fc.normal_flip()
     if edges is None:
+        rb, rt = rc if isinstance(rc, tuple) else (rc, rc)
+        (bx_, by_), (tx_, ty_) = [(r, r) if not isinstance(r, tuple) else r for r in (rb, rt)]
         A0, A1 = a0 * ka, a1 * ka
-        segs = [((A0 + rc, b0), (A1 - rc, b0), (0, -1)), ((A1, b0 + rc), (A1, b1 - rc), (1, 0)),
-                ((A1 - rc, b1), (A0 + rc, b1), (0, 1)), ((A0, b1 - rc), (A0, b0 + rc), (-1, 0))]
-        corners = [(A1 - rc, b0 + rc, -90), (A1 - rc, b1 - rc, 0), (A0 + rc, b1 - rc, 90), (A0 + rc, b0 + rc, 180)]
+        segs = [((A0 + bx_, b0), (A1 - bx_, b0), (0, -1)), ((A1, b0 + by_), (A1, b1 - ty_), (1, 0)),
+                ((A1 - tx_, b1), (A0 + tx_, b1), (0, 1)), ((A0, b1 - ty_), (A0, b0 + by_), (-1, 0))]
+        corners = [(A1 - bx_, b0 + by_, -90, bx_, by_), (A1 - tx_, b1 - ty_, 0, tx_, ty_),
+                   (A0 + tx_, b1 - ty_, 90, tx_, ty_), (A0 + bx_, b0 + by_, 180, bx_, by_)]
         path = []
-        for (p, q, d), (cx, cy, ang0) in zip(segs, corners):
+        for (p, q, d), (cx, cy, ang0, rx, ry) in zip(segs, corners):
             L = math.hypot(q[0] - p[0], q[1] - p[1])
             n = max(1, int(L / step))
             for k in range(n):
                 t = k / n
                 path.append((p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, d[0], d[1]))
-            for k in range(5):
-                a = math.radians(ang0 + 90 * k / 5)
-                path.append((cx + rc * math.cos(a), cy + rc * math.sin(a), math.cos(a), math.sin(a)))
+            nk = max(5, int(max(rx, ry) / 0.025))
+            for k in range(nk):
+                a = math.radians(ang0 + 90 * k / nk)
+                nx, ny = math.cos(a) / rx, math.sin(a) / ry
+                nl = math.hypot(nx, ny)
+                path.append((cx + rx * math.cos(a), cy + ry * math.sin(a), nx / nl, ny / nl))
         build([(a / ka, b, da, db) for a, b, da, db in path], True)
     else:
         for e in edges:
@@ -735,6 +802,22 @@ def gasket(f, rect, material='rubber', edges=None, rc=0.035, ka=1.0, step=0.08, 
             else:
                 a = a0 if e == 'l' else a1
                 build([(a, b, -1 if e == 'l' else 1, 0) for b in breaks(b0, b1, [], lambda m: step)], False)
+
+def corner_fillets(f, rect, rb, rt, ka, uvf, n=10):
+    """Fill the corners of a rectangular opening so it reads as rounded (radius rb at the bottom,
+    rt at the top, in metres), on the same surface and with the same texture as the mask."""
+    a0, a1, b0, b1 = rect
+    A0, A1 = a0 * ka, a1 * ka
+    (bx_, by_), (tx_, ty_) = [(r, r) if not isinstance(r, tuple) else r for r in (rb, rt)]
+    for (cxA, cyB, rx, ry, ang0, CA, CB) in ((A0 + bx_, b0 + by_, bx_, by_, 180, A0, b0), (A1 - bx_, b0 + by_, bx_, by_, 270, A1, b0),
+                                             (A1 - tx_, b1 - ty_, tx_, ty_, 0, A1, b1), (A0 + tx_, b1 - ty_, tx_, ty_, 90, A0, b1)):
+        def P(t, rho, cxA=cxA, cyB=cyB, rx=rx, ry=ry, ang0=ang0, CA=CA, CB=CB):
+            a = math.radians(ang0 + 90 * t)
+            A = CA + rho * (cxA + rx * math.cos(a) - CA)
+            B = CB + rho * (cyB + ry * math.sin(a) - CB)
+            return A / ka, B
+        g = lambda t, rho: f(*P(t, rho))
+        add_grid(acc('paint'), g, [k / n for k in range(n + 1)], [0.0, 0.5, 1.0], uvf=lambda t, rho: uvf(*P(t, rho)))
 
 # ============================================================================== body (vozová skříň)
 BODY = part('body', explode=(0, 1.3, 0))
@@ -748,18 +831,21 @@ for side in (1, -1):
         reveal(f, g, 'paint', edges='lr', depth=GROOVE_D, uvf=uvf, astep=0.1)
     add_grid(acc('under'), lambda x, u, s=side: surf(x, u, s), X_MID, lin(0.0, u_of_y(Y_SIDE0), 3))
     add_grid(acc('paint'), lambda x, u, s=side: surf(x, u, s), X_MID, lin(u_of_y(SIDE_TOP), 1.0, 22), uvf=uv_side_u(side))
-    # raised chrome trim strip over the skirt, interrupted by the doors
+    # aluminium strip under the red band (0.762-0.838 m) and bright beading over it (1.608-1.656 m),
+    # both interrupted by the doors (side elevation)
     gaps = [(x0, x1) for _, x0, x1 in DOOR_SPANS] if side == 1 else []
     stops = sorted([-XS, XS] + [v for g_ in gaps for v in g_])
     for i in range(0, len(stops), 2):
         X = breaks(stops[i], stops[i + 1], [], lambda m: 0.3)
         bm = acc('chrome')
-        add_grid(bm, f, X, [SKIRT - 0.008, SKIRT - 0.004], 0.0015)
-        add_grid(bm, f, X, [SKIRT - 0.004, SKIRT + 0.010], 0.0035)
-        add_grid(bm, f, X, [SKIRT + 0.010, SKIRT + 0.014], 0.0015)
+        for y0_, y1_ in ((0.762, 0.838), (1.608, 1.656)):
+            add_grid(bm, f, X, [y0_, y0_ + 0.004], 0.0015)
+            add_grid(bm, f, X, [y0_ + 0.004, y1_ - 0.004], 0.0035)
+            add_grid(bm, f, X, [y1_ - 0.004, y1_], 0.0015)
     for rect in (WIN_R if side == 1 else WIN_L):
         reveal(f, rect, 'rubber', start=0.006)
-        gasket(f, rect)
+        gasket(f, rect, rc=0.086)                    # clearly rounded corners in black rubber (side elevation)
+        corner_fillets(f, rect, 0.086, 0.086, 1.0, uvf)
     # sash bars of the windows: horizontal under the vents, vertical between the two sliding vent panes
     for (a0, a1, b0, b1) in (WIN_R if side == 1 else WIN_L):
         X = breaks(a0, a1, [], lambda m: 0.3)
@@ -807,15 +893,37 @@ for i, (word, xw) in enumerate((('VÝSTUP', -4.17), ('VÝSTUP', 0.44), ('VSTUP',
     p = surf(xw, u_of_y(1.45), 1) + Vector((0, 0, 0.0012))
     text_mesh(f'sign.{i}', word, 0.17, p, Vector((1, 0, 0)), Vector((0, 1, 0)), 'lettering',
               extrude=0.0005, font=FONT_SIGN)
-    # amber side lamp on the window pillar nearest x = 3.0
+# rain gutter above the windows along the whole side, its ends turned down (side elevation: 2.584 m,
+# from above the rear corner window to the front door)
+for side in (1, -1):
+    f = side_pt(side)
+    xr, xf = -6.12, 5.99
+    pts = [(xr - 0.035, 2.505), (xr - 0.03, 2.55), (xr, 2.584)] + [(x, 2.584) for x in np.linspace(xr + 0.25, xf - 0.25, 12)] + \
+          [(xf, 2.584), (xf + 0.03, 2.55), (xf + 0.035, 2.505)]
+    rod(f'gutter.{side}', [f(x, y) + normal(f, x, y) * 0.011 for x, y in pts], 0.011, 'rubber', seg=8)
+# side route board behind the top of the third window from the front (right side, coloured elevation)
+p0 = surf(3.775, u_of_y(2.372), 1) - Vector((0, 0, 0.03))
+box('side_route_board', p0, (1.07, 0.205, 0.02), 'darkmetal', bevel=0.006)
+# four small outlined plates just ahead of the middle door, two at window height and two in the red band
+# (side elevation; door push buttons or signal lamps)
+for k, yc in enumerate((2.375, 1.925, 1.445, 0.995)):
+    f = side_pt(1)
+    for (x0_, x1_, y0_, y1_) in ((0.006, 0.066, yc + 0.069, yc + 0.075), (0.006, 0.066, yc - 0.075, yc - 0.069),
+                                 (0.006, 0.012, yc - 0.075, yc + 0.075), (0.060, 0.066, yc - 0.075, yc + 0.075)):
+        add_grid(acc('rubber'), f, [x0_, x1_], [y0_, y1_], 0.0015)
+    box(f'door_signal.{k}', surf(0.036, u_of_y(yc), 1) + Vector((0, 0, 0.002)), (0.046, 0.136, 0.003),
+        'lettering' if yc > 1.6 else 'redpaint', bevel=0.001)
+# amber indicator on the window pillar nearest x = 3.0 m on both sides; seen from the front they stand
+# out ~50 mm beyond the body side, centred 2.23 m up, ~155 mm tall (front and side elevations)
+for side in (1, -1):
     wins = sorted(WIN_R if side == 1 else WIN_L)
     gaps = [((wins[i][1] + wins[i + 1][0]) / 2) for i in range(len(wins) - 1) if wins[i + 1][0] - wins[i][1] < 0.3]
     xl = min(gaps, key=lambda g: abs(g - 3.0))
-    p = surf(xl, u_of_y(2.24), side)
+    p = surf(xl, u_of_y(2.225), side)
     n = Vector((0, 0, side))
     bm = bmesh.new()
-    cyl_into(bm, p - n * 0.003, p + n * 0.018, 0.028, 20, bevel=0.006)
-    bmesh.ops.scale(bm, vec=Vector((0.8, 1.35, 1.0)), space=Matrix.Translation(-p), verts=bm.verts)
+    cyl_into(bm, p - n * 0.004, p + n * 0.050, 0.04, 16, bevel=0.012)
+    bmesh.ops.scale(bm, vec=Vector((1.0, 1.95, 1.0)), space=Matrix.Translation(-p), verts=bm.verts)
     finish(bm, f'side_lamp.{side}', 'amber', sharp=50)
 # louvred grille in the red band on the left side (coloured elevation): cooling for the equipment
 # under the floor
@@ -860,9 +968,43 @@ def eased(E, n=24):
 
 def mask(E, holes):
     f = nose_pt(E)
-    cells(f, -1.0, 1.0, Y_SIDE0, H_ROOF, holes, 0.04,
+    opens = list(holes)
+    ka = 1.249 * E.q
+    if E is FRONT:
+        gap = (LOBE_GAP[0] / (1.25 * 0.98 * E.q), LOBE_GAP[1] / (1.25 * 0.98 * E.q), Y_SIDE0 - 0.01, LOBE_GAP[3])
+        opens.append(gap)
+    cells(f, -1.0, 1.0, Y_SIDE0, H_ROOF, opens, 0.04,
           lambda y: 0.025 if y < 0.80 else 0.015 if y > 2.85 else 0.03 if y > 2.45 else 0.07,
-          lambda y: 'paint', extra_b=(SKIRT, BELT, SIDE_TOP), uvf=uv_nose(E))
+          lambda y: 'paint', extra_b=(SKIRT, BELT, SIDE_TOP, 1.592, 1.638, 1.656), uvf=uv_nose(E))
+    if E is REAR:                                     # rounded corners on the rear windows (side elevation)
+        for h in holes:
+            corner_fillets(f, h, 0.06, 0.10, ka, uv_nose(E))
+        S = breaks(-1.0, 1.0, [], lambda m: 0.04)     # bright beading over the red, as on the sides
+        add_grid(acc('chrome'), f, S, [1.608, 1.612], 0.0015)
+        add_grid(acc('chrome'), f, S, [1.612, 1.652], 0.0035)
+        add_grid(acc('chrome'), f, S, [1.652, 1.656], 0.0015)
+    if E is FRONT:
+        for h in holes:
+            corner_fillets(f, h, WS_RC[0], WS_RC[1], ka, uv_nose(E))
+        # the recess between the skirt lobes (front elevation): flat inner walls, a ceiling under the
+        # bumper and a grey back wall with horizontal slats, about 0.28 m deep
+        XB = 6.55
+        zg = LOBE_GAP[1]
+        YB = breaks(Y_SIDE0, LOBE_GAP[3], [], lambda m: 0.05)
+        for sz in (-1, 1):
+            add_grid(acc('grey'), lambda t, y, sz=sz: Vector((XB + t * (nose(E, sz * zg, y).x - 0.005 - XB), y, sz * zg)),
+                     [0.0, 1.0], YB, orient=lambda c, sz=sz: Vector((0, 0, -sz)))
+        xf = nose(E, 0.0, LOBE_GAP[3] - 0.01).x - 0.005
+        box('recess.ceiling', ((XB + xf) / 2, LOBE_GAP[3] - 0.005, 0), (xf - XB, 0.01, 2 * zg), 'grey', bevel=0.002)
+        box('recess.back', (XB, (Y_SIDE0 + LOBE_GAP[3]) / 2, 0), (0.01, LOBE_GAP[3] - Y_SIDE0, 2 * zg), 'grey', bevel=0.002)
+        for yy in (0.46, 0.54, 0.62, 0.69):
+            box(f'recess.slat.{yy}', (XB + 0.012, yy, 0), (0.012, 0.025, 2 * zg - 0.04), 'darkmetal', bevel=0.003)
+        # bright beading across the face at the top of the cream band (front elevation, centres of the
+        # outline strokes: 1,590-1,638 mm)
+        S = breaks(-1.0, 1.0, [], lambda m: 0.04)
+        add_grid(acc('chrome'), f, S, [1.592, 1.596], 0.0015)
+        add_grid(acc('chrome'), f, S, [1.596, 1.634], 0.0035)
+        add_grid(acc('chrome'), f, S, [1.634, 1.638], 0.0015)
     for side in (1, -1):
         add_grid(acc('under'), lambda x, u, s=side: surf(x, u, s), eased(E), lin(0.0, u_of_y(Y_SIDE0), 3))
     S = breaks(-1.0, 1.0, [], lambda m: 0.04)
@@ -872,7 +1014,7 @@ def mask(E, holes):
     add_grid(bm, f, S, [SKIRT + 0.010, SKIRT + 0.014], 0.0015)
     for h in holes:
         reveal(f, h, 'rubber', astep=0.03, start=0.006)
-        gasket(f, h, ka=1.25, rc=0.07 if h[1] - h[0] > 1 else 0.035)
+        gasket(f, h, ka=ka, rc=WS_RC if E is FRONT else (0.06, 0.10))
 
 part('front_mask', explode=(1.0, 1.3, 0))
 mask(FRONT, FRONT_HOLES)
@@ -889,37 +1031,76 @@ def tilted_box(name, w, h, d, push, material, bevel=0.008):
     box_into(bm, (0, 0, 0), (w, h, d), bevel, rot=_RT)
     bmesh.ops.translate(bm, vec=_dc + _tilt * push, verts=bm.verts)
     return finish(bm, name, material, smooth=True, sharp=50)
-tilted_box('route_box.frame', 1.10, 0.20, 0.10, 0.0, 'maroon', bevel=0.012)
-tilted_box('route_box.blind', 1.04, 0.15, 0.02, 0.045, 'darkmetal', bevel=0.002)
-tilted_box('route_box.glass', 1.05, 0.16, 0.004, 0.058, 'glass', bevel=0.001)
-text_mesh('route_box.text', '4  MOTOL', 0.095, _dc + _tilt * 0.0555, _bx, _up, 'signtext', extrude=0.0005, font=FONT_SIGN)
-
-for s in (1, -1):                                     # wipers: spindle, arm and rubber blade
-    n0 = normal(fz, s * 0.10, 2.44)
-    sp = nose_s(FRONT, s * 0.10, 2.44) + n0 * 0.02
-    n1 = normal(fz, s * 0.42, 1.80)
-    tip = nose_s(FRONT, s * 0.42, 1.80) + n1 * 0.022
-    cyl(f'wiper.spindle.{s}', sp - n0 * 0.02, sp + n0 * 0.012, 0.014, 'darkmetal', seg=12, bevel=0.002)
-    rod(f'wiper.arm.{s}', [sp, tip], 0.006, 'darkmetal', seg=8)
-    d = (tip - sp).normalized()
+def tilted_pill(name, w, h, d, push, material, r=None):
+    """Rounded-end (pill) slab in the plane of the dome, like the sign in the front elevation."""
+    r = h / 2 * 0.92 if r is None else r
     bm = bmesh.new()
-    box_into(bm, (0, 0, 0), (0.012, 0.42, 0.010), 0.002, rot=Vector((0, 1, 0)).rotation_difference(d).to_matrix())
-    bmesh.ops.translate(bm, vec=tip - d * 0.2 + n1 * 0.005, verts=bm.verts)
+    ring = []
+    for (cx, cy, a0) in ((w / 2 - r, h / 2 - r, 0), (-(w / 2 - r), h / 2 - r, 90), (-(w / 2 - r), -(h / 2 - r), 180), (w / 2 - r, -(h / 2 - r), 270)):
+        for k in range(9):
+            a = math.radians(a0 + 90 * k / 8)
+            ring.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    back = [bm.verts.new(_RT @ Vector((x, y, -d / 2))) for x, y in ring]
+    front = [bm.verts.new(_RT @ Vector((x, y, d / 2))) for x, y in ring]
+    bm.faces.new(front)
+    bm.faces.new(list(reversed(back)))
+    m = len(ring)
+    for k in range(m):
+        bm.faces.new([back[k], back[(k + 1) % m], front[(k + 1) % m], front[k]])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bmesh.ops.translate(bm, vec=_dc + _tilt * push, verts=bm.verts)
+    return finish(bm, name, material, sharp=40)
+# front elevation: dark grey panel 1,056 x 200 mm with strongly rounded ends, 2.60-2.80 m up
+tilted_pill('route_box.frame', 1.085, 0.215, 0.06, 0.012, 'darkmetal')
+tilted_pill('route_box.blind', 1.03, 0.165, 0.01, 0.040, 'darkmetal', r=0.075)
+tilted_pill('route_box.glass', 1.04, 0.175, 0.004, 0.044, 'glass', r=0.078)
+# edge of the raised panel round the sign: arches over it and runs down to the windscreen corners
+_arch = [(-0.635, 2.760), (-0.640, 2.820), (-0.620, 2.865), (-0.570, 2.885), (-0.40, 2.893), (0.0, 2.896)]
+_arch = _arch + [(-z, y) for z, y in reversed(_arch[:-1])]
+rod('route_box.panel_edge', [nose(FRONT, z, y) + normal(fz, z / (1.249 * FRONT.q), y) * 0.002 for z, y in _arch], 0.006, 'lettering', seg=8)
+# rain gutter over the windscreen: straight across just above the glass, ends hooked down outside it
+_gut = [(-0.930, 2.390), (-0.934, 2.450), (-0.920, 2.495), (-0.885, 2.519), (-0.84, 2.524), (0.0, 2.524)]
+_gut = _gut + [(-z, y) for z, y in reversed(_gut[:-1])]
+rod('windscreen.gutter', [nose(FRONT, z, y) + normal(fz, z / (1.249 * FRONT.q), y) * 0.012 for z, y in _gut], 0.013, 'rubber', seg=8)
+text_mesh('route_box.text', '4  MOTOL', 0.095, _dc + _tilt * 0.0405, _bx, _up, 'signtext', extrude=0.0005, font=FONT_SIGN)
+
+def on_glass(z, y, out):
+    zb = prof(u_of_y(y))[0] * taper(y) * FRONT.q
+    return nose_s(FRONT, z / zb, y) + normal(fz, z / zb, y) * out
+# centre post dividing the windscreen (front elevation), on the outside of the glass
+_pb, _pt = on_glass(0.0, WS_Y0 + 0.01, -0.004), on_glass(0.0, WS_Y1 - 0.01, -0.004)
+_d = (_pt - _pb).normalized()
+bm = bmesh.new()
+box_into(bm, (0, 0, 0), (0.022, (_pt - _pb).length, 0.036), 0.004,
+         rot=Vector((0, 1, 0)).rotation_difference(_d).to_matrix())
+bmesh.ops.translate(bm, vec=(_pb + _pt) / 2, verts=bm.verts)
+finish(bm, 'windscreen.centre_post', 'chrome', sharp=50)
+for s in (1, -1):                                     # wipers: pivot at the bottom, arm, blade parked upright
+    sp = on_glass(s * 0.30, 1.650, 0.012)
+    b0, b1 = on_glass(s * 0.042, 1.76, 0.022), on_glass(s * 0.042, 2.19, 0.022)
+    bmid = (b0 + b1) / 2
+    cyl(f'wiper.spindle.{s}', sp - Vector((0.02, 0, 0)), sp + Vector((0.015, 0, 0)), 0.016, 'darkmetal', seg=12, bevel=0.002)
+    rod(f'wiper.arm.{s}', [sp + Vector((0.012, 0, 0)), bmid], 0.011, 'darkmetal', seg=8)
+    d = (b1 - b0).normalized()
+    bm = bmesh.new()
+    box_into(bm, (0, 0, 0), (0.030, (b1 - b0).length, 0.014), 0.003, rot=Vector((0, 1, 0)).rotation_difference(d).to_matrix())
+    bmesh.ops.translate(bm, vec=bmid, verts=bm.verts)
     finish(bm, f'wiper.blade.{s}', 'rubber', sharp=50)
 
-def bumper(name, E, y=0.69, half=1.20, out=0.035, th=0.05, h=0.08, n=72, material='chrome', r=0.012):
+def bumper(name, E, y=0.69, half=1.20, out=0.035, th=0.05, h=0.08, n=72, material='chrome', r=0.012, zr=None):
     """Bumper bar with a rounded section, following the mask."""
     bm = bmesh.new()
     f = nose_pt(E)
-    zb = prof(u_of_y(y))[0] * taper(y)
+    zb = prof(u_of_y(y))[0] * taper(y) * E.q
     sec = []
     for (cx, cy, a0) in ((th / 2 - r, h / 2 - r, 0), (-(th / 2 - r), h / 2 - r, 90), (-(th / 2 - r), -(h / 2 - r), 180), (th / 2 - r, -(h / 2 - r), 270)):
         for k in range(4):
             a = math.radians(a0 + 30 * k)
             sec.append((cx + r * math.cos(a), cy + r * math.sin(a)))
     rings = []
+    z_lo, z_hi = zr if zr else (-half, half)
     for i in range(n + 1):
-        z = -half + 2 * half * i / n
+        z = z_lo + (z_hi - z_lo) * i / n
         s = z / zb
         p = f(s, y)
         nn = normal(f, max(-0.999, min(0.999, s)), y)
@@ -936,7 +1117,7 @@ def bumper(name, E, y=0.69, half=1.20, out=0.035, th=0.05, h=0.08, n=72, materia
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     return finish(bm, name, material, sharp=60)
 
-bumper('bumper_front', FRONT)
+bumper('bumper_front', FRONT, y=0.8015, out=0.045, th=0.045, h=0.133, r=0.015, zr=(-1.015, 1.015), n=48)   # 0.735-0.868 m
 
 def flap(name, E, f):
     """Small rectangular flap in the middle of the end, just under the belt (front and rear elevations)."""
@@ -947,56 +1128,70 @@ def flap(name, E, f):
         box_into(bm, (0, 0, 0), size, 0.002)
         bmesh.ops.transform(bm, matrix=Matrix.Translation(p + n * push) @ Vector((1, 0, 0)).rotation_difference(n).to_matrix().to_4x4(), verts=bm.verts)
         finish(bm, nm, mt, sharp=50)
-flap('front_flap', FRONT, fz)
-
-for s in (1, -1):                                     # marker lamps on stalks at the cab corners
-    p = nose(FRONT, s * 1.20, 1.78)
-    n = (normal(fz, s * 0.93, 1.78) + Vector((0, 0, s * 0.8))).normalized()
-    cyl(f'marker.stalk.{s}', p, p + n * 0.07, 0.012, 'chrome', seg=12)
-    cyl(f'marker.body.{s}', p + n * 0.065, p + n * 0.09, 0.05, 'chrome', seg=24, bevel=0.004)
-    cyl(f'marker.lens.{s}', p + n * 0.09, p + n * 0.108, 0.044, 'lamp', seg=24, r2=0.036)
+def seam_outline(name, E, f, zc, yc, w, h, line=0.008):
+    for k, (z0, z1, y0, y1) in enumerate(((zc - w / 2, zc + w / 2, yc + h / 2 - line, yc + h / 2),
+                                           (zc - w / 2, zc + w / 2, yc - h / 2, yc - h / 2 + line),
+                                           (zc - w / 2, zc - w / 2 + line, yc - h / 2, yc + h / 2),
+                                           (zc + w / 2 - line, zc + w / 2, yc - h / 2, yc + h / 2))):
+        zb = prof(u_of_y(yc))[0] * taper(yc) * E.q
+        add_grid(acc('rubber'), f, breaks(z0 / zb, z1 / zb, [], lambda m: 0.02), [y0, y1], 0.0012)
+seam_outline('front_flap', FRONT, fz, 0.0, 1.485, 0.316, 0.130)
 
 FACE_X, FACE_Y = Vector((0, 0, -1)), Vector((0, 1, 0))
-p = nose(FRONT, 0.0, 1.10)
-text_mesh('fleet_number', NUMBER, 0.18, p + Vector((0.0012, 0, 0)), FACE_X, FACE_Y, 'gold', extrude=0.0008, font=FONT_NUM)
+p = nose(FRONT, 0.0, 1.068)                           # front elevation: digits 137 mm high, 385 mm wide
+_up = (nose(FRONT, 0.0, 1.20) - nose(FRONT, 0.0, 0.95)).normalized()      # the face leans back towards the bottom
+text_mesh('fleet_number', NUMBER, 0.277, p + _up.cross(FACE_X).normalized() * -0.0012, FACE_X * 0.812, _up, 'gold', extrude=0.0008, font=FONT_NUM)
 if '--tatra' in ARGS:
     p = nose(FRONT, 0.0, 0.92)
     text_mesh('tatra_lettering', 'TATRA', 0.11, p + Vector((0.004, 0, 0)), FACE_X, FACE_Y, 'chrome', extrude=0.006)
 
 # horn under the front end, door side (ASSUMED position)
-cyl('horn.bell', (6.35, 0.27, 0.55), (6.62, 0.27, 0.55), 0.022, 'chrome', seg=20, r2=0.055)
-cyl('horn.body', (6.22, 0.27, 0.55), (6.35, 0.27, 0.55), 0.03, 'darkmetal', seg=16, bevel=0.004)
+cyl('horn.bell', (5.12, 0.40, 0.55), (5.39, 0.40, 0.55), 0.022, 'chrome', seg=20, r2=0.055)   # behind the guard plate
+cyl('horn.body', (4.99, 0.40, 0.55), (5.12, 0.40, 0.55), 0.03, 'darkmetal', seg=16, bevel=0.004)
 
 # ============================================================================== headlights, mirror
 part('headlights', explode=(1.5, 1.3, 0))
 for s in (1, -1):
-    z, y = s * 0.52, 1.10                            # front elevation: 1.04 m apart, centres 1.10 m up, ~200 mm
+    z, y = s * 0.50, 1.073                           # front elevation: 1.00 m apart, centres 1.073 m up, ~200 mm
     p = nose(FRONT, z, y)
     n = normal(fz, z / 1.2, y)
     fixed_uv(cyl(f'headlamp.body.{s}', p - n * 0.02, p + n * 0.05, 0.10, 'paint', seg=40, bevel=0.01), (0.5, 0.82))
     cyl(f'headlamp.rim.{s}', p + n * 0.048, p + n * 0.064, 0.099, 'chrome', seg=40, bevel=0.006)
-    cyl(f'headlamp.lens.{s}', p + n * 0.064, p + n * 0.080, 0.084, 'lens', seg=40, r2=0.066)
-    # upright oval position lamp at the front corner, just under the belt (front and side elevations)
-    z2, y2 = s * 0.90, 1.41
+    cyl(f'headlamp.lens.{s}', p + n * 0.064, p + n * 0.080, 0.062, 'lens', seg=40, r2=0.050)
+    # upright oval position lamp, dark rim round a white lens (front elevation: centre 0.87 m out, 1.38 m up)
+    z2, y2 = s * 0.87, 1.38
     p = nose(FRONT, z2, y2)
-    n = normal(fz, z2 / 1.2, y2)
-    bm = bmesh.new()
-    cyl_into(bm, p - n * 0.006, p + n * 0.016, 0.03, 24, bevel=0.005)
-    bmesh.ops.scale(bm, vec=Vector((0.85, 2.2, 0.85)), space=Matrix.Translation(-p), verts=bm.verts)
-    finish(bm, f'position_lamp.{s}', 'lamp', sharp=50)
+    n = normal(fz, z2 / (1.249 * FRONT.q), y2)
+    for nm, r, d0, d1, sy, mt in (('rim', 0.034, -0.004, 0.010, 1.95, 'rubber'), ('lens', 0.024, 0.006, 0.018, 2.1, 'lamp')):
+        bm = bmesh.new()
+        cyl_into(bm, p + n * d0, p + n * d1, r, 16, bevel=0.004)
+        bmesh.ops.scale(bm, vec=Vector((1.0, sy, 1.0)), space=Matrix.Translation(-p), verts=bm.verts)
+        finish(bm, f'position_lamp.{nm}.{s}', mt, sharp=50)
 
 part('mirror', explode=(1.0, 1.3, 0.6))
-a = surf(5.97, u_of_y(1.90), 1)
-b = a + Vector((0.10, 0.05, 0.28))
-rod('mirror.arm', [a, a + Vector((0.04, 0.0, 0.14)), b], 0.012, 'chrome')
-box('mirror.head', b + Vector((0.0, 0.0, 0.03)), (0.04, 0.24, 0.15), 'darkmetal', bevel=0.015)
-box('mirror.glass', b + Vector((-0.021, 0.0, 0.03)), (0.003, 0.21, 0.125), 'mirror', bevel=0.001)
+# front elevation: round heads ~85 mm across, 0.80 m either side of the centre, 1.81 m up, on stalks
+# hooking down and outwards; the side elevation puts them behind the windscreen, at x ~6.46 m
+for s in (1, -1):
+    hc = Vector((6.46, 1.81, s * 0.80))
+    rod(f'mirror.stalk.{s}', [hc + Vector((0, -0.04, 0)), hc + Vector((0.0, -0.09, s * 0.02)),
+                              hc + Vector((0.0, -0.13, s * 0.05)), hc + Vector((0.0, -0.15, s * 0.07))], 0.006, 'chrome', seg=8)
+    cyl(f'mirror.head.{s}', hc - Vector((0.012, 0, 0)), hc + Vector((0.006, 0, 0)), 0.043, 'darkmetal', seg=18, bevel=0.004)
+    cyl(f'mirror.glass.{s}', hc + Vector((0.006, 0, 0)), hc + Vector((0.009, 0, 0)), 0.036, 'mirror', seg=18)
 
 # ============================================================================== rear mask
 part('rear_mask', explode=(-1.0, 1.3, 0))
 mask(REAR, REAR_HOLES)
 flush('rear_mask')
-bumper('bumper_rear', REAR)
+bumper('bumper_rear', REAR, y=0.8195, out=0.012, th=0.03, h=0.113, r=0.010, half=0.99 * 1.25)   # 0.763-0.876 m
+# small amber lamp on the rear corner at the bottom of the red band (side elevation: x -6.90 m, 0.97 m up)
+for s_ in (1, -1):
+    sbest = min(np.linspace(0.3, 0.999, 200), key=lambda sv: abs(abs(nose_s(REAR, sv, 0.97).x) - 6.90))
+    p = nose_s(REAR, s_ * sbest, 0.97)
+    n = normal(rz, s_ * sbest, 0.97)
+    bm = bmesh.new()
+    cyl_into(bm, p - n * 0.004, p + n * 0.018, 0.022, 16, bevel=0.005)
+    bmesh.ops.scale(bm, vec=Vector((1.0, 0.8, 1.0)), space=Matrix.Translation(-p), verts=bm.verts)
+    finish(bm, f'rear_corner_lamp.{s_}', 'amber', sharp=50)
 flap('rear_flap', REAR, rz)
 for s in (1, -1):                                     # paired tail and indicator lamps (coloured rear elevation)
     for z, mt in ((s * 0.36, 'redlens'), (s * 0.48, 'amber')):
@@ -1029,7 +1224,10 @@ def door(pid, x0, x1):
     for i in range(4):
         a, b = x0 + i * (w + gap), x0 + i * (w + gap) + w
         uvf = lambda x, y, a=a: ((x - a) / 0.32, (y - 0.33) / 2.21)
-        glass = [(a + 0.055, b - 0.055, 0.95, 1.55), (a + 0.055, b - 0.055, 1.62, 2.44)]
+        # side elevation: visible panes 0.12 m wide, centred 0.215 and 0.485 m either side of the door
+        # centre, upper 1.683-2.418 m, lower 0.784-1.521 m
+        cx_ = (a + b) / 2 + (0.023, -0.046, 0.046, -0.023)[i]
+        glass = [(cx_ - 0.086, cx_ + 0.086, 0.758, 1.547), (cx_ - 0.086, cx_ + 0.086, 1.657, 2.444)]
         front, back = leaf_pt(0.0), leaf_pt(LEAF_T)
         cells(front, a, b, 0.335, 2.54, glass, 0.4, lambda y: 0.2, lambda y: 'door', uvf=uvf)
         cells(back, a, b, 0.335, 2.54, glass, 0.4, lambda y: 0.2, lambda y: 'door', inward=True, uvf=uvf)
@@ -1043,8 +1241,11 @@ def door(pid, x0, x1):
         reveal(front, (a, b, 0.335, 2.54), 'door', depth=LEAF_T, outward=True, uvf=uvf)
         hx = a if i in (0, 1) else b                # hinge knuckles on this leaf's hinge edge
         zf = f(hx, 1.5).z + 0.009
-        for yk in (0.75, 1.55, 2.35):
+        for yk in (0.413, 1.627, 2.506):                # hinge marks at the top, middle and bottom (side elevation)
             cyl_into(acc('steel'), (hx, yk - 0.035, zf + 0.004), (hx, yk + 0.035, zf + 0.004), 0.011, 12, bevel=0.002)
+        if i in (1, 2):                              # handle bar across the fold joint at mid-height
+            jx = a if i == 1 else b
+            box_into(acc('steel'), (jx + (0.03 if i == 1 else -0.03), 1.627, zf + 0.012), (0.06, 0.014, 0.012), 0.004)
         if i in (1, 2):                              # rubber edge seal where the pairs meet
             ex = b if i == 1 else a
             box_into(acc('rubber'), (ex + (0.004 if i == 1 else -0.004), 1.44, zf - LEAF_T / 2), (0.012, 2.19, 0.03), 0.004)
@@ -1070,14 +1271,18 @@ def door(pid, x0, x1):
                 rehome(o, pv, main, pv)
                 o.name = f'{pid}.leaf{i}.{m}'
     xm = (x0 + x1) / 2                               # step well: two ribbed treads with steel nosings
-    box(f'{pid}.tread.upper', (xm, 0.64, 1.00), (x1 - x0, 0.04, 0.26), 'floor', bevel=0.004)
-    box(f'{pid}.riser.upper', (xm, 0.77, 0.875), (x1 - x0, 0.26, 0.02), 'under', bevel=0.003)
-    box(f'{pid}.tread.lower', (xm, 0.37, 1.14), (x1 - x0, 0.04, 0.22), 'floor', bevel=0.004)
-    box(f'{pid}.riser.lower', (xm, 0.495, 1.035), (x1 - x0, 0.25, 0.02), 'under', bevel=0.003)
+    za, zc = plan_w(x0) * 1.25, plan_w(x1) * 1.25    # wall line (narrows at the front door)
+    dz = (za + zc) / 2 - 1.25
+    rw = Matrix.Rotation(math.atan2(-(zc - za), x1 - x0), 3, 'Y')
+    box(f'{pid}.tread.upper', (xm, 0.64, 1.00 + dz), (x1 - x0, 0.04, 0.26), 'floor', bevel=0.004, rot=rw)
+    box(f'{pid}.riser.upper', (xm, 0.77, 0.875 + dz), (x1 - x0, 0.26, 0.02), 'under', bevel=0.003, rot=rw)
+    box(f'{pid}.tread.lower', (xm, 0.37, 1.14 + dz), (x1 - x0, 0.04, 0.22), 'floor', bevel=0.004, rot=rw)
+    box(f'{pid}.riser.lower', (xm, 0.495, 1.035 + dz), (x1 - x0, 0.25, 0.02), 'under', bevel=0.003, rot=rw)
     for yy, zz in ((0.662, 1.125), (0.392, 1.245)):
-        box(f'{pid}.nosing.{yy}', (xm, yy, zz), (x1 - x0, 0.012, 0.03), 'steel', bevel=0.003)
+        box(f'{pid}.nosing.{yy}', (xm, yy, zz + dz), (x1 - x0, 0.012, 0.03), 'steel', bevel=0.003, rot=rw)
     for xx in (x0 + 0.06, x1 - 0.06):
-        cyl(f'{pid}.pole.{xx:.2f}', (xx, FLOOR, 0.86), (xx, 2.54, 0.86), 0.016, 'chrome', seg=14)
+        zz = 0.86 + plan_w(xx) * 1.25 - 1.25
+        cyl(f'{pid}.pole.{xx:.2f}', (xx, FLOOR, zz), (xx, 2.54, zz), 0.016, 'chrome', seg=14)
 
 for pid, x0, x1 in DOOR_SPANS:
     door(pid, x0, x1)
@@ -1097,13 +1302,19 @@ INNER = 1.25 - WALL
 pts = [(-XS, INNER)]
 for _, x0, x1 in sorted(DOOR_SPANS, key=lambda d: d[1]):
     pts += [(x0, INNER), (x0, 0.865), (x1, 0.865), (x1, INNER)]
-pts += [(XS, INNER)]
+def inner_w(x):
+    return plan_w(x) * 1.25 - WALL
+pts = [(x, inner_w(x) if z == INNER else z) for x, z in pts]
+pts.append((XS, inner_w(XS)))
+pts += [(x, inner_w(x)) for x in np.linspace(TAPER_X0, XS, 6)[1:]] if pts[-1][0] < TAPER_X0 else []
+for E in (FRONT,):
+    zb_f = prof(u_of_y(FLOOR))[0] * taper(FLOOR) * E.q
+    for k in range(1, 24):
+        s = 1 - 2 * k / 24
+        q = nose_s(E, s * (zb_f - WALL) / zb_f, FLOOR)
+        pts.append((q.x - WALL, q.z))
+pts += [(x, -inner_w(x)) for x in np.linspace(XS, TAPER_X0, 6)] + [(-XS, -INNER)]
 zb_f = prof(u_of_y(FLOOR))[0] * taper(FLOOR)
-for k in range(1, 24):
-    s = 1 - 2 * k / 24
-    q = nose_s(FRONT, s * (zb_f - WALL) / zb_f, FLOOR)
-    pts.append((q.x - WALL, q.z))
-pts += [(XS, -INNER), (-XS, -INNER)]
 for k in range(1, 24):
     s = -1 + 2 * k / 24
     q = nose_s(REAR, s * (zb_f - WALL) / zb_f, FLOOR)
@@ -1177,23 +1388,46 @@ flush('interior')
 
 # ============================================================================== roof
 part('roof_vents', explode=(0, 1.9, 0))
-for i, (x0, x1) in enumerate(((-6.04, -4.94), (-1.34, -0.24), (4.40, 5.56))):     # low roof vents (type drawing)
-    box(f'vent.{i}', ((x0 + x1) / 2, H_ROOF + 0.025, 0), (x1 - x0, 0.06, 0.62), 'roofgrey', bevel=0.02)
-    bm = bmesh.new()
-    for k in range(int((x1 - x0) / 0.09)):
-        box_into(bm, (x0 + 0.06 + k * 0.09, H_ROOF + 0.03, 0), (0.03, 0.05, 0.64), 0.004)
-    finish(bm, f'vent.{i}.slats', 'darkmetal', sharp=50)
+# three raised cream covers about 1.18 m long, standing ~60 mm above the roof (side elevation), with a
+# dark air gap under the edge
+for i, (x0, x1) in enumerate(((-5.808, -4.624), (-1.322, -0.138), (4.125, 5.300))):
+    box(f'vent.{i}', ((x0 + x1) / 2, 3.052, 0), (x1 - x0, 0.06, 0.66), 'lettering', bevel=0.022)
+    box(f'vent.{i}.gap', ((x0 + x1) / 2, 3.012, 0), (x1 - x0 - 0.04, 0.03, 0.62), 'darkmetal', bevel=0.004)
 
 part('roof_equipment', explode=(0, 2.1, 0))
-box('roof_hatch', (0.22, H_ROOF + 0.06, 0), (0.52, 0.12, 0.58), 'roofgrey', bevel=0.025)          # centre hatch
-box('roof_hatch.lid', (0.22, H_ROOF + 0.125, 0), (0.56, 0.02, 0.62), 'roofgrey', bevel=0.008)
-for zz in (-0.66, 0.66):                              # dark insulating mats along the pantograph (coloured elevations)
-    box(f'roof_mat.{zz}', (2.585, 3.000, zz), (2.93, 0.016, 0.26), 'rubber', bevel=0.004,
-        rot=Matrix.Rotation(math.radians(7 if zz > 0 else -7), 3, 'X'))
+box('roof_hatch', (0.1525, 3.040, 0.10), (0.425, 0.10, 0.62), 'darkmetal', bevel=0.02)            # top of the box over the middle door
+def shoulder_box(name, x0, x1, side, y_lo, z_top, t_lo, t_hi, material):
+    """A box lying on the curved roof shoulder: from the side wall at y_lo up over the edge to |z| = z_top,
+    standing t_lo proud at the bottom and t_hi at the top."""
+    u0 = u_of_y(y_lo)
+    us = [u for u in np.linspace(u0, 1.0, 400) if prof(u)[0] >= z_top]
+    u1 = us[-1]
+    U = list(np.linspace(u0, u1, 12))
+    X = list(np.linspace(x0, x1, 2))
+    t = lambda u: t_lo + (t_hi - t_lo) * (u - u0) / (u1 - u0)
+    g = lambda x, u: surf(x, u, side) + normal(lambda a, b: surf(a, b, side), x, u) * t(u)
+    bm = acc(material)
+    add_grid(bm, g, X, U)
+    for xe in (x0, x1):                               # end faces down to the roof
+        add_grid(bm, lambda d, u, xe=xe: surf(xe, u, side) + normal(lambda a, b: surf(a, b, side), xe, u) * t(u) * d,
+                 [0.0, 1.0], U, orient=lambda c, xe=xe: Vector((1 if xe == x1 else -1, 0, 0)))
+    add_grid(bm, lambda x, d: surf(x, u1, side) + normal(lambda a, b: surf(a, b, side), x, u1) * t(u1) * d, X, [0.0, 1.0],
+             orient=lambda c: Vector((0, 1, -side)).normalized())
+# Three dark boxes on each roof shoulder along the pantograph, seen in the side elevation as dark blocks
+# 2.83-3.01 m up (x 1.48-2.49, 2.52-3.55, 3.58-4.09 m); their contents are not stated in the sources.
+for side in (1, -1):
+    for k, (x0, x1) in enumerate(((1.477, 2.494), (2.524, 3.547), (3.577, 4.091))):
+        shoulder_box(f'roof_box.{side}.{k}', x0, x1, side, 2.83, 0.70, 0.004, 0.004, 'darkmetal')   # flush: no bulge in the front elevation
+# dark box on the right roof shoulder over the front edge of the middle door, from the gutter up over the
+# roof edge to ~3.09 m (side elevation: x -0.06..0.37 m)
+shoulder_box('roof_box.door', -0.060, 0.365, 1, 2.60, 0.15, 0.006, 0.012, 'darkmetal')
+box('roof_box.door.foot', surf(0.1525, u_of_y(2.605), 1) + Vector((0, 0, 0.012)), (0.465, 0.03, 0.024), 'darkmetal', bevel=0.006)
+flush('roof_equipment')
 # low cover behind the pantograph, high at the front and sloping down to the rear (both elevations,
 # front and rear view: about 0.6 m wide, top ~3.38 m above rail); contents not stated in the sources
 bm = bmesh.new()
-_prof = [(2.36, 3.03), (2.36, 3.36), (2.33, 3.38), (1.68, 3.38), (1.06, 3.12), (1.04, 3.03)]
+# side elevation: from x 1.00 m (rounded, sloping rear end) to 2.45 m, top rising to 3.36 m at the front
+_prof = [(2.45, 3.005), (2.45, 3.335), (2.41, 3.362), (1.25, 3.30), (1.08, 3.27), (1.02, 3.20), (1.00, 3.10), (1.00, 3.005)]
 _vs = [[bm.verts.new((x, y, z)) for x, y in _prof] for z in (-0.30, 0.30)]
 bm.faces.new(list(reversed(_vs[0])))
 bm.faces.new(_vs[1])
@@ -1209,26 +1443,37 @@ part('pantograph', explode=(0, 2.6, 0))
 # Large rhombic (diamond) pantograph as drawn in both elevations: two diamond frames side by side,
 # bottom corners on a common base, top corners carrying the pan, X-bracing between the frames
 # (front elevation). Shown partly raised.
-X0 = 3.10                                             # over the front bogie (type drawing)
+X0 = 3.13                                             # over the front bogie (side elevation)
+# side elevation: a pale platform plate on the roof (x 2.46-3.58 m, top 3.09 m), short insulators, a dark
+# base frame (x 2.76-3.50 m, 3.13-3.28 m) with a ribbed spring block on top; the lower arms start at the
+# two ends of the frame
+box('platform', (3.02, 3.060, 0), (1.12, 0.06, 1.24), 'grey', bevel=0.008)
 for sx in (-1, 1):
     for sz in (-1, 1):
         bm = bmesh.new()
-        for k in range(4):
-            yk = H_ROOF + 0.02 + k * 0.025
-            cyl_into(bm, (X0 + sx * 0.42, yk, sz * 0.45), (X0 + sx * 0.42, yk + 0.02, sz * 0.45), 0.048 if k % 2 == 0 else 0.036, 20, bevel=0.004)
+        for k in range(2):
+            yk = 3.090 + k * 0.02
+            cyl_into(bm, (X0 + sx * 0.30, yk, sz * 0.45), (X0 + sx * 0.30, yk + 0.02, sz * 0.45), 0.040 if k == 0 else 0.032, 16, bevel=0.003)
         finish(bm, f'insulator.{sx}{sz}', 'insulator', sharp=60)
-box('base.frame', (X0, H_ROOF + 0.13, 0), (0.98, 0.04, 1.16), 'darkmetal', bevel=0.01)
-Y_BASE = H_ROOF + 0.17
+box('base.frame', (X0, 3.190, 0), (0.74, 0.12, 1.12), 'darkmetal', bevel=0.012)
+box('base.block', (X0, 3.262, 0), (0.66, 0.025, 0.70), 'darkmetal', bevel=0.004)
+bm = bmesh.new()
+for k in range(22):                                   # ribs of the spring block
+    box_into(bm, (X0 - 0.315 + k * 0.03, 3.282, 0), (0.008, 0.020, 0.66), 0.002)
+finish(bm, 'base.ribs', 'steel', sharp=50)
+Y_BASE = 3.225
+XB_ = 0.35                                            # half-distance between the arms' bottom pivots
 # Scaled off the coloured elevations, where the pantograph is drawn raised to the wire at ~5.0 m:
 # knees ~3.99 m above rail and 1.52 m either side of the centre, the two frames 1.06 m apart.
 HW = 1.52
-Y_MID, Y_TOP = 3.99, 4.905
+Y_MID, Y_TOP = 3.96, 4.905
 ZF = 0.53
 for sz in (-1, 1):
     zz = sz * ZF
-    rod(f'diamond.{sz}', [(X0, Y_BASE, zz), (X0 - HW, Y_MID, zz), (X0, Y_TOP, zz), (X0 + HW, Y_MID, zz), (X0, Y_BASE, zz)],
+    rod(f'diamond.{sz}', [(X0 - XB_, Y_BASE, zz), (X0 - HW, Y_MID, zz), (X0, Y_TOP, zz), (X0 + HW, Y_MID, zz), (X0 + XB_, Y_BASE, zz)],
         0.020, 'panto', seg=12)
-    cyl(f'hinge.base.{sz}', (X0, Y_BASE, zz - 0.04), (X0, Y_BASE, zz + 0.04), 0.03, 'darkmetal', seg=14, bevel=0.003)
+    for sx in (-1, 1):
+        cyl(f'hinge.base.{sz}{sx}', (X0 + sx * XB_, Y_BASE, zz - 0.04), (X0 + sx * XB_, Y_BASE, zz + 0.04), 0.03, 'darkmetal', seg=14, bevel=0.003)
     for sx in (-1, 1):
         cyl(f'hinge.knee.{sz}{sx}', (X0 + sx * HW, Y_MID, zz - 0.035), (X0 + sx * HW, Y_MID, zz + 0.035), 0.026, 'darkmetal', seg=14, bevel=0.003)
 for sx in (-1, 1):                                    # cross tubes at the knees
@@ -1247,16 +1492,6 @@ for sx in (-1, 1):                                    # pan head: two bows with 
     rod(f'pan.strut2.{sx}', [(X0, Y_TOP, 0.25), (xb, Y_TOP + 0.05, 0.30)], 0.010, 'panto', seg=8)
 for sz in (-1, 1):
     cyl(f'pan.end.{sz}', (X0 - 0.13, Y_TOP + 0.05, sz * 0.70), (X0 + 0.13, Y_TOP + 0.05, sz * 0.70), 0.012, 'panto', seg=10)
-for sx in (-1, 1):                                    # raising springs from the base to the lower arms
-    a = Vector((X0 + sx * 0.45, Y_BASE - 0.01, 0.0))
-    b = Vector((X0 + sx * 0.30, Y_BASE + 0.25, 0.0))
-    d = (b - a)
-    n = 140
-    t0 = d.normalized()
-    u0 = t0.orthogonal().normalized()
-    v0 = t0.cross(u0)
-    helix = [a + d * (k / n) + (u0 * math.cos(2 * math.pi * 14 * k / n) + v0 * math.sin(2 * math.pi * 14 * k / n)) * 0.025 for k in range(n + 1)]
-    sweep(f'raising_spring.{sx}', helix, 0.004, 'steel', seg=6)
 
 # ============================================================================== bogies and wheels
 AXLE_Y = WHEEL_R
@@ -1342,12 +1577,16 @@ finish(bm, 'accelerator.ribs', 'cast', sharp=50)
 for pid, s in (('coupler_front', 1), ('coupler_rear', -1)):
     part(pid, explode=(s * 1.4, 0, 0))
     tip = s * L_COUPLERS / 2
-    cyl(f'{pid}.bar', (s * 6.55, 0.50, 0), (tip - s * 0.08, 0.50, 0), 0.04, 'grey', seg=16, bevel=0.004)
-    box(f'{pid}.head', (tip - s * 0.05, 0.50, 0), (0.10, 0.07, 0.14), 'grey', bevel=0.012)
-    cyl(f'{pid}.pin', (tip - s * 0.05, 0.43, 0), (tip - s * 0.05, 0.57, 0), 0.014, 'steel', seg=12)
-    box(f'{pid}.cover', (s * 6.86, 0.52, 0), (0.22, 0.14, 0.46), 'grey', bevel=0.02)
-    box(f'{pid}.head_cap', (tip - s * 0.05, 0.50, 0), (0.13, 0.09, 0.17), 'grey', bevel=0.025)
-    chain = [(tip - s * (0.1 + 0.025 * k), 0.47 - 0.09 * math.sin(math.pi * k / 12), 0.08) for k in range(13)]
+    yc = 0.56                                         # side elevation: coupler 0.56 m up, head 600 mm beyond the body
+    cyl(f'{pid}.bar', (s * 6.55, yc, 0), (tip - s * 0.08, yc, 0), 0.04, 'grey', seg=16, bevel=0.004)
+    box(f'{pid}.head', (tip - s * 0.05, yc, 0), (0.10, 0.07, 0.14), 'grey', bevel=0.012)
+    cyl(f'{pid}.pin', (tip - s * 0.05, yc - 0.07, 0), (tip - s * 0.05, yc + 0.07, 0), 0.014, 'steel', seg=12)
+    if s == -1:
+        box(f'{pid}.cover', (s * 6.86, 0.52, 0), (0.22, 0.14, 0.46), 'grey', bevel=0.02)
+    else:                                             # mounting block on the back wall of the recess
+        box(f'{pid}.mount', (6.55, yc, 0), (0.12, 0.16, 0.24), 'grey', bevel=0.015)
+    box(f'{pid}.head_cap', (tip - s * 0.05, yc, 0), (0.13, 0.09, 0.17), 'grey', bevel=0.025)
+    chain = [(tip - s * (0.1 + 0.025 * k), yc - 0.03 - 0.035 * math.sin(math.pi * k / 12), 0.08) for k in range(13)]
     sweep(f'{pid}.chain', chain, 0.006, 'steel', seg=6)
 
 # ============================================================================== plate under the front end
@@ -1355,11 +1594,11 @@ for pid, s in (('coupler_front', 1), ('coupler_rear', -1)):
 # between the front bogie and the coupler, sloping from ~0.30 m above rail at the rear edge to ~0.12 m
 # at the front. Its purpose is not stated in the sources.
 part('guard_plate', explode=(0.8, -0.25, 0))
-_gp = lambda x: 0.30 - 0.18 * (x - 4.66) / (6.35 - 4.66)
-_ang = math.degrees(math.atan2(0.18, 6.35 - 4.66))
-box('guard_plate.sheet', ((4.66 + 6.35) / 2, _gp(5.505), 0), (1.70, 0.012, 1.80), 'cast', bevel=0.004,
+_gp = lambda x: 0.325 - 0.135 * (x - 4.66) / (6.35 - 4.66)
+_ang = math.degrees(math.atan2(0.135, 6.35 - 4.66))
+box('guard_plate.sheet', ((4.66 + 6.35) / 2, _gp(5.505), 0), (1.70, 0.012, 1.80), 'grey', bevel=0.004,
     rot=rot_z(-_ang))
-box('guard_plate.lip', (6.35, 0.12, 0), (0.03, 0.05, 1.80), 'cast', bevel=0.006)
+box('guard_plate.lip', (6.35, 0.125, 0), (0.03, 0.13, 1.80), 'darkmetal', bevel=0.006)
 for xb in (4.80, 6.15):
     for zb in (-0.75, 0.75):
         box(f'guard_plate.hanger.{xb}.{zb}', (xb, (_gp(xb) + BODY_BOTTOM) / 2 + 0.01, zb),
@@ -1563,6 +1802,50 @@ def cycles(samples):
     except Exception as ex:
         print('look unavailable', look, ex)
     scene.view_settings.exposure = float(ARGS[ARGS.index('--exposure') + 1]) if '--exposure' in ARGS else -0.4
+
+if '--idpass' in ARGS:
+    # Flat-colour orthographic views for the numeric comparison with the coloured drawing: every
+    # material emits its base colour (or base-colour texture), glass is light blue, nothing is lit.
+    for m in list(bpy.data.materials):
+        if not m.use_nodes:
+            continue
+        nt = m.node_tree
+        p = nt.nodes.get('Principled BSDF')
+        out = next((n for n in nt.nodes if n.type == 'OUTPUT_MATERIAL'), None)
+        if p is None or out is None:
+            continue
+        em = nt.nodes.new('ShaderNodeEmission')
+        bc = p.inputs['Base Color']
+        if p.inputs['Transmission Weight'].default_value > 0.5 if 'Transmission Weight' in p.inputs else False:
+            em.inputs['Color'].default_value = (0.55, 0.75, 0.90, 1)
+        elif bc.is_linked:
+            nt.links.new(bc.links[0].from_socket, em.inputs['Color'])
+        else:
+            em.inputs['Color'].default_value = bc.default_value
+        for l in list(out.inputs['Surface'].links):
+            nt.links.remove(l)
+        nt.links.new(em.outputs['Emission'], out.inputs['Surface'])
+    w = bpy.data.worlds.new('idw'); w.use_nodes = True
+    w.node_tree.nodes['Background'].inputs['Color'].default_value = (0, 0, 0, 1)
+    scene.world = w
+    scene.render.engine = 'CYCLES'
+    scene.cycles.device = 'CPU'
+    scene.cycles.samples = 8
+    scene.cycles.use_denoising = False
+    scene.cycles.max_bounces = 0
+    scene.cycles.filter_width = 0.5
+    scene.view_settings.view_transform = 'Standard'
+    scene.view_settings.look = 'None'
+    scene.view_settings.exposure = 0.0
+    scene.render.film_transparent = True
+    for name, loc, look, scale, res in (('id_front.png', (40, 1.7, 0), (0, 1.7, 0), 3.4, (3000, 3400)),
+                                        ('id_side.png', (5.85, 1.7, 40), (5.85, 1.7, 0), 3.7, (3700, 3400)),
+                                        ('id_right.png', (0.0, 2.5, 40), (0.0, 2.5, 0), 16.2, (8100, 2600))):
+        co = camera(loc, look, 50, res)
+        co.data.type = 'ORTHO'
+        co.data.ortho_scale = scale
+        scene.render.filepath = os.path.join(OUT, name)
+        bpy.ops.render.render(write_still=True)
 
 if '--render' in ARGS or '--checks' in ARGS:
     render_materials()

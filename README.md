@@ -42,6 +42,16 @@ python3 blender/build_t3.py -- out --render          # render 1920 × 1080 na tr
 base64 -w0 out/t3_6101_web.glb > t3_6101.txt         # model pro stránku
 ```
 
+Kontrola čela proti barevnému výkresu / front-end check against the coloured drawing (the drawing itself is not in the repository):
+
+```
+python3 blender/build_t3.py -- out --idpass                       # ploché pohledy zepředu a z boku, 1 mm na pixel
+python3 blender/compare_front.py <celo_vykres.jpg> out/id_front.png  # tabulka odchylek v mm
+python3 blender/compare_side.py <bok_vykres.jpg> out/id_right.png    # pravý bok / right side
+```
+
+Výsledky / results: [docs/front-check](docs/front-check/index.html), [docs/side-check](docs/side-check/index.html)
+
 Souřadnice: x dopředu, y nahoru, z doprava, metry, počátek na temeni kolejnice pod středem vozu. Každý díl je prázdný objekt s id dílu a směrem rozložení; křídla dveří mají počátek v pantu, dvojkolí v nápravě.
 
 Coordinates: x forward, y up, z to the right, metres, origin on the rail top under the vehicle centre. Every part is an empty carrying its id and explode direction; door leaves have their origin on the hinge, wheelsets on the axle.

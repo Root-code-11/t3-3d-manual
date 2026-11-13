@@ -73,8 +73,7 @@ def gauss_line(d, w):
 # ------------------------------------------------------------------------------------------------ livery
 def livery(y, L):
     col = np.where(y[..., None] < L['SKIRT'], CREAM, np.where(y[..., None] < L['BELT'], RED, CREAM)).astype(np.float32)
-    pin = ((y > L['BELT'] - 0.004) & (y < L['BELT'] + 0.010)) | ((y > L['EAVE']) & (y < L['EAVE'] + 0.012))
-    col[pin] = MAROON
+    # (no painted pinstripes: the side elevation shows a bright beading over the red and a gutter above the windows)
     return col
 
 def rect_dist(x, y, r):
@@ -128,7 +127,11 @@ def paint_side(L, side, H, W, seed):
     col = livery(Y, L)
     under = U < L['u_bottom']
     col[under] = UNDER
-    col[U > L['u_grey']] = ROOF
+    # side elevation: the grey roof comes down to 2.66 m, just above the gutter, and sweeps up in a rounded
+    # corner at both ends where the cream domes begin
+    dx = np.clip(np.abs(X) - (L['XS'] - 0.05 - 0.30), 0, 0.30)
+    y_grey = 2.66 + 0.40 * (1 - np.sqrt(np.maximum(0, 1 - (dx / 0.30) ** 2)))
+    col[Y > y_grey] = ROOF
     roof = smooth((U - L['u_roof']) / 0.04)
     rough = np.full((H, W), 0.36, np.float32)
     ao = np.ones((H, W), np.float32)
@@ -158,6 +161,15 @@ def paint_mask(L, end, H, W, seed):
     A_col = ((np.arange(W, dtype=np.float32) + 0.5) / W - 0.5) * 2 * L['ARCMAX']
     Y, A = np.meshgrid(y_row, A_col, indexing='ij')
     col = livery(Y, L)
+    if end == 'front':
+        # front elevation: under the bright beading (1.61-1.64 m) the face stays cream down to 1.48 m;
+        # the red only rises to the belt in a rounded corner where the mask meets the body side
+        a_end = float(np.interp(1.0, E['s'], E['A_at_ws']))
+        R = L['BELT'] - 1.48
+        d = np.clip(np.abs(A) - (a_end - R), 0, R)
+        top = 1.48 + R - np.sqrt(np.maximum(R * R - d * d, 0))
+        band = (Y >= top) & (Y < L['BELT'] + 0.06)
+        col[band] = CREAM
     roof = smooth((Y - 2.78) / 0.12)
     rough = np.full((H, W), 0.36, np.float32)
     ao = np.ones((H, W), np.float32)
