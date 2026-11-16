@@ -49,9 +49,10 @@ python3 blender/build_t3.py -- out --idpass                       # ploché pohl
 python3 blender/compare_front.py <celo_vykres.jpg> out/id_front.png  # tabulka odchylek v mm
 python3 blender/compare_side.py <bok_vykres.jpg> out/id_right.png    # pravý bok / right side
 python3 blender/compare_left.py <levy_bok.jpg> out/id_left.png       # levý bok / left side
+python3 blender/compare_rear.py <zad_vykres.jpg> out/id_rear.png      # záď / rear
 ```
 
-Výsledky / results: [docs/front-check](docs/front-check/index.html), [docs/side-check](docs/side-check/index.html), [docs/left-check](docs/left-check/index.html)
+Výsledky / results: [docs/front-check](docs/front-check/index.html), [docs/side-check](docs/side-check/index.html), [docs/left-check](docs/left-check/index.html), [docs/rear-check](docs/rear-check/index.html)
 
 Souřadnice: x dopředu, y nahoru, z doprava, metry, počátek na temeni kolejnice pod středem vozu. Každý díl je prázdný objekt s id dílu a směrem rozložení; křídla dveří mají počátek v pantu, dvojkolí v nápravě.
 
