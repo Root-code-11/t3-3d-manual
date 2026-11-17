@@ -39,6 +39,7 @@ Testováno s Blenderem 5.2 jako Python modulem (`pip install bpy`):
 ```
 python3 blender/build_t3.py -- out --glb --web       # model .glb (4K) a lehčí verze pro web
 python3 blender/build_t3.py -- out --render          # render 1920 × 1080 na trati
+python3 blender/build_t3.py -- out --retex --glb      # po změně tvaru čel znovu namalovat textury (jinak se použijí uložené)
 base64 -w0 out/t3_6101_web.glb > t3_6101.txt         # model pro stránku
 ```
 
@@ -52,7 +53,7 @@ python3 blender/compare_left.py <levy_bok.jpg> out/id_left.png       # levý bok
 python3 blender/compare_rear.py <zad_vykres.jpg> out/id_rear.png      # záď / rear
 ```
 
-Výsledky / results: [docs/front-check](docs/front-check/index.html), [docs/side-check](docs/side-check/index.html), [docs/left-check](docs/left-check/index.html), [docs/rear-check](docs/rear-check/index.html)
+Výsledky / results: [docs/front-check](docs/front-check/index.html), [docs/side-check](docs/side-check/index.html), [docs/left-check](docs/left-check/index.html), [docs/rear-check](docs/rear-check/index.html), [docs/corner-check](docs/corner-check/index.html), [docs/left-rear-check](docs/left-rear-check/index.html)
 
 Souřadnice: x dopředu, y nahoru, z doprava, metry, počátek na temeni kolejnice pod středem vozu. Každý díl je prázdný objekt s id dílu a směrem rozložení; křídla dveří mají počátek v pantu, dvojkolí v nápravě.
 

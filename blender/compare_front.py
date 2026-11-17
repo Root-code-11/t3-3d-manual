@@ -176,6 +176,18 @@ def features(v, model):
         b = v.blob(LIGHT, z0, z1, 1.20, 1.55)
         if b:
             put(f'position lamp {nm} centre zv', b['z']); put(f'position lamp {nm} centre y', b['y']); put(f'position lamp {nm} height', b['h'])
+    # mirror heads near the lower corners of the windscreen (drawing: dark ring behind the glass; model: white)
+    for nm, sg in (('L', -1), ('R', 1)):
+        if model:
+            r0, r1, c0, c1 = v.win(*sorted((sg * 0.65, sg * 1.30)), 1.76, 1.93)
+            m = np.isin(v.lab[r0:r1, c0:c1], ['white'])
+        else:
+            r0, r1, c0, c1 = v.win(*sorted((sg * 0.68, sg * 0.92)), 1.765, 1.87)
+            m = v.lum[r0:r1, c0:c1] < 90
+        rr, cc = np.nonzero(m)
+        if len(cc) > 8:
+            put(f'mirror head {nm} centre zv', v.zv(c0 + (cc.min() + cc.max() + 1) / 2)); put(f'mirror head {nm} centre y', v.y(r0 + (rr.min() + rr.max() + 1) / 2))
+            put(f'mirror head {nm} diameter', (rr.max() - rr.min() + 1) / v.ppm)
     # amber indicators
     for nm, z0, z1 in (('L', -1.45, -1.05), ('R', 1.05, 1.45)):
         b = v.blob(('amber',), z0, z1, 1.75, 2.70)

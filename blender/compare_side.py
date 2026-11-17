@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image, ImageFilter
 from compare_front import classify, View, D_PAL, M_PAL, TOL
 
-M_PAL2 = dict(M_PAL, grey2=(90, 90, 92), roofgrey=(60, 60, 60))
+M_PAL2 = dict(M_PAL, grey2=(90, 90, 92), roofgrey=(60, 60, 60), brown=(112, 70, 49))   # brown: step bars under the doors
 
 def load_drawing(path):
     im = Image.open(path).convert('RGB').filter(ImageFilter.GaussianBlur(2.0))
@@ -180,11 +180,60 @@ def features(v, model):
     for nm, x0, x1 in (('rear corner window', -7.0, -5.95), ('cab side window', 5.95, 7.0)):
         rs = runs_on_row(v, GLASS, 2.05, x0, x1, min_w=0.08)
         if rs:
-            put(f'{nm} rear edge', rs[0][0]); put(f'{nm} front edge', rs[-1][1])
+            # (the rear corner window: the pane that ends at the front edge; the rear window behind its bar is not part of it)
+            put(f'{nm} rear edge', rs[-1][0] if nm.startswith('rear') else rs[0][0]); put(f'{nm} front edge', rs[-1][1])
             xc = (rs[0][0] + rs[-1][1]) / 2 if nm.startswith('rear') else rs[0][0] + 0.12
             e = v.col_edges(GLASS, xc, 1.55, 2.70, half=2)
             if e: put(f'{nm} top', e[0]); put(f'{nm} bottom', e[1])
+    extra_features(v, model, put, f)
+    corner_features(v, model, put, f)
     return f
+
+def extra_features(v, model, put, f):
+    """Small items added in the second right-side round: marker lamp under the cab window, the lamp on the
+    rear corner, the four signal plates by the middle door, and anything light standing in the red band
+    beside the doors (grab handles)."""
+    # marker lamp: light lens in the red band under the cab window
+    r0, r1, c0, c1 = v.win(5.95, 6.45, 1.28, 1.462)
+    m = (v.lum[r0:r1, c0:c1] > 170) if not model else np.isin(v.lab[r0:r1, c0:c1], ['white', 'chrome', 'light'])
+    rr, cc = np.nonzero(m)
+    if len(cc) > 10:
+        put('side marker x', v.zv(c0 + cc.mean())); put('side marker y', v.y(r0 + rr.mean()))
+        put('side marker height', (rr.max() - rr.min() + 1) / v.ppm)
+    b = v.blob(('amber',), -7.05, -6.70, 0.86, 1.06)
+    if b: put('rear corner lamp x', b['z']); put('rear corner lamp y', b['y'])
+    # light things standing in the red band within 0.12 m of each door edge (handles)
+    for nm, xe, sg in (('rear door', -4.643, 1), ('middle door', -0.0735, 1), ('front door', 4.643, -1)):
+        n = 0
+        for dx in (0.02, 0.04, 0.06, 0.08, 0.10):
+            c = v.col(xe + sg * dx); rr0, rr1 = v.row(1.45), v.row(1.0)
+            n = max(n, int(np.isin(v.lab[rr0:rr1, c], ['white', 'chrome', 'light', 'grey']).sum()))
+        f[f'light pixels in the red band beside the {nm}'] = n
+
+def corner_features(v, model, put, f):
+    """Third right-side round (front three-quarter): mirror head and the step plate under the front door."""
+    # mirror head: the small oval in the cab window (drawing: centre of its dark ring; model: white head)
+    if model:
+        r0, r1, c0, c1 = v.win(6.30, 6.65, 1.77, 1.93)
+        m = np.isin(v.lab[r0:r1, c0:c1], ['white'])
+    else:
+        r0, r1, c0, c1 = v.win(6.36, 6.54, 1.775, 1.90)
+        m = v.lum[r0:r1, c0:c1] < 90
+    rr, cc = np.nonzero(m)
+    if len(cc) > 8:
+        put('mirror head x', v.zv(c0 + (cc.min() + cc.max() + 1) / 2)); put('mirror head y', v.y(r0 + (rr.min() + rr.max() + 1) / 2))
+        put('mirror head height', (rr.max() - rr.min() + 1) / v.ppm)
+    # step plate under the front door: grey trapezoid near the rail
+    G = ('grey', 'grey2') if model else ('grey',)
+    for xx in (5.2, 5.8):
+        e = v.col_edges(G, xx, 0.02, 0.345, half=2)
+        if e: put(f'step plate top at x {xx:.1f}', e[0]); put(f'step plate bottom at x {xx:.1f}', e[1])
+    for yy in (0.27, 0.17):
+        e = v.row_edges(G, yy, 4.55, 6.75, half=2)     # (from 4.55 m: clear of the wheel)
+        if e: put(f'step plate rear end at y {yy:.2f}', e[0]); put(f'step plate front end at y {yy:.2f}', e[1])
+    # anything brown/amber-ish left at rail level under the front door
+    r0, r1, c0, c1 = v.win(4.6, 6.1, 0.05, 0.34)
+    f['light pixels under the front door at rail level'] = int(np.isin(v.lab[r0:r1, c0:c1], ['white', 'chrome', 'light', 'amber']).sum())
 
 def main():
     d, m = load_drawing(sys.argv[1]), load_model(sys.argv[2])
