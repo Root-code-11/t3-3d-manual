@@ -94,7 +94,7 @@ def features(v, model):
             if e: put(f'{nm} upper pane top', e[0]); put(f'{nm} upper pane bottom', e[1])
         if lo:
             xc = (lo[0][0] + lo[0][1]) / 2
-            e = v.col_edges(GLASS, xc, 0.55, 1.65, half=1)
+            e = v.col_edges(GLASS, xc, 0.55, 1.58, half=1)      # (to 1.58: stays below the upper pane's rounded bottom)
             if e: put(f'{nm} lower pane top', e[0]); put(f'{nm} lower pane bottom', e[1])
     # ---- red band and the bright strip under it
     for x in (-6.5, -3.8, -2.2, 1.6, 3.9, 6.3):
@@ -226,7 +226,7 @@ def corner_features(v, model, put, f):
     # step plate under the front door: grey trapezoid near the rail
     G = ('grey', 'grey2') if model else ('grey',)
     for xx in (5.2, 5.8):
-        e = v.col_edges(G, xx, 0.02, 0.345, half=2)
+        e = v.col_edges(G, xx, 0.02, 0.33, half=2)    # (to 0.33: under the leaves' bottom edge at 0.335)
         if e: put(f'step plate top at x {xx:.1f}', e[0]); put(f'step plate bottom at x {xx:.1f}', e[1])
     for yy in (0.27, 0.17):
         e = v.row_edges(G, yy, 4.55, 6.75, half=2)     # (from 4.55 m: clear of the wheel)

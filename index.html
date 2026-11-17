@@ -260,13 +260,13 @@ const UI = {
 };
 
 const DOOR = {
-  cz: { x: 'Čtyřkřídlé skládací dveře; křídla se po dvojicích sklápějí dovnitř vozu. Vůz 6102 a sériové vozy mají všechny troje dveře široké 1 343 mm, první prototyp 6101 je měl užší. Model má dveře podle vozu 6102. Ve dveřním prostoru jsou dva schody do úrovně podlahy, vedle dveří madla. Každé křídlo má úzké horní a dolní okno; na spojích křídel jsou závěsy a uprostřed výšky držadlo.',
-        d: [['Šířka dveří', '1 343 mm'], ['Křídla', '4, skládací'], ['Dveří ve voze', '3, jen vpravo'], ['Okna křídel', 'asi 120 mm široká, 1 683–2 418 a 784–1 521 mm']],
-        n: 'Typový výkres kótuje dveře „≈1400 mm“; model drží údaj pro vůz 6102.' },
-  en: { x: 'Four-leaf folding door; the leaves fold inwards in pairs. Car 6102 and the series cars have all three doors 1,343 mm wide; the first prototype 6101 had narrower ones. The model follows 6102. Two steps lead up from the doorway to the floor, with grab poles beside the door. Each leaf has a narrow upper and lower pane; the leaf joints carry hinges and a handle at mid-height.',
-        d: [['Door width', '1,343 mm'], ['Leaves', '4, folding'], ['Doors per car', '3, right side only'], ['Leaf panes', 'about 120 mm wide, 1,683–2,418 and 784–1,521 mm']],
-        n: 'The type drawing dimensions the doors as "≈1400 mm"; the model keeps the figure for car 6102.' },
-  src: [SRC.pt, SRC.wiki, SRC.com],
+  cz: { x: 'Čtyřkřídlé skládací dveře; křídla se po dvojicích sklápějí dovnitř vozu. Vůz 6102 a sériové vozy mají všechny troje dveře široké 1 343 mm, první prototyp 6101 je měl užší. Model má dveře podle vozu 6102. Ve dveřním prostoru jsou dva schody do úrovně podlahy: horní má v půdorysu tvar nepravidelného šestiúhelníku, zúženého u zárubní, kam se sklápějí otevřená křídla, a dolní leží těsně pod spodní hranou křídel, takže je křídla při otevření míjejí. Vedle dveří jsou svislá madla. Každé křídlo má dvě vysoká okna s plně zaoblenými konci, horní těsně pod horní hranou dveří; na spojích křídel jsou závěsy a uprostřed výšky držadlo. Obě vnitřní křídla mají zevnitř šikmé madlo přes dolní okno, jedno na každou polovinu dveří.',
+        d: [['Šířka dveří', '1 343 mm'], ['Křídla', '4, skládací'], ['Dveří ve voze', '3, jen vpravo'], ['Okna křídel', 'asi 200 mm široká, zaoblená, 1 613–2 468 a 654–1 541 mm']],
+        n: 'Typový výkres kótuje dveře „≈1400 mm“; model drží údaj pro vůz 6102. Okna a madla jsou podle fotografií vozů 6102 a 7807, tvar schodů podle půdorysu barevného výkresu.' },
+  en: { x: 'Four-leaf folding door; the leaves fold inwards in pairs. Car 6102 and the series cars have all three doors 1,343 mm wide; the first prototype 6101 had narrower ones. The model follows 6102. Two steps lead up from the doorway to the floor: the upper one is an irregular hexagon in plan, cut back at the jambs where the open wings fold, and the lower one lies just under the bottom of the wings, so they pass over it when opening. Grab poles stand beside the door. Each leaf has two tall windows with fully rounded ends, the upper one close under the top of the door; the leaf joints carry hinges and a handle at mid-height. Both inner leaves have a diagonal handle on the inside across the lower window, one for each half of the door.',
+        d: [['Door width', '1,343 mm'], ['Leaves', '4, folding'], ['Doors per car', '3, right side only'], ['Leaf windows', 'about 200 mm wide, rounded, 1,613–2,468 and 654–1,541 mm']],
+        n: 'The type drawing dimensions the doors as "≈1400 mm"; the model keeps the figure for car 6102. Windows and handles follow photos of cars 6102 and 7807; the step shapes follow the plan of the coloured drawing.' },
+  src: [SRC.pt, SRC.wiki, SRC.com, SRC.photo],
 };
 const MOTOR = {
   cz: { x: 'Každý podvozek pohání dvojice sériových trakčních motorů TE 022 z ČKD Praha. Motory leží podélně a na nápravy přenášejí sílu kuželovým převodem, který je tišší. Oba motory jednoho podvozku jsou zapojené za sebou a obě skupiny paralelně.',
@@ -353,11 +353,11 @@ const PARTS = {
     names: { cz: ['Zadní dveře', 'skládací, 1343 mm'], en: ['Rear door', 'folding, 1343 mm'] } },
 
   headlights: { sys: 'body', cz: { t: 'Světlomety', s: 'dva kulaté',
-      x: 'Dva kulaté světlomety jsou zapuštěné v červeném panelu čela, mezi nimi je číslo vozu. Sklo je obklopené širokým světlým rámečkem. Na obou bocích je pod okny kabiny, těsně pod rozhraním barev, ještě bílé oválné boční světlo a na zadních rozích dole malé oranžovo-červené svítilny.',
+      x: 'Dva kulaté světlomety jsou zapuštěné v červeném panelu čela, mezi nimi je číslo vozu. Sklo je obklopené širokým světlým rámečkem. Na obou bocích je pod okny kabiny, těsně pod rozhraním barev, ještě bílé oválné boční světlo.',
       d: [['Počet', '2, kulaté'], ['Průměr', 'asi 200 mm, sklo asi 120 mm'], ['Rozteč', 'asi 1 000 mm'], ['Výška osy', 'asi 1 073 mm nad temenem kolejnice'], ['Boční světla', '2, svislý bílý ovál, 780 mm za čelem, 1 390 mm vysoko']],
       n: 'Výška, rozteč a velikost světel jsou odměřené z čelního pohledu barevného výkresu. Poziční světla na čele, která výkres kreslí, fotografie vozu 6149 neukazuje, proto v modelu nejsou.' },
     en: { t: 'Headlights', s: 'two round lamps',
-      x: 'Two round headlights are set into the red front panel, with the fleet number between them. Each lens sits in a broad bright ring. On both sides, under the cab windows just below the colour line, sits a white oval side marker, and low on the rear corners small amber-red lamps.',
+      x: 'Two round headlights are set into the red front panel, with the fleet number between them. Each lens sits in a broad bright ring. On both sides, under the cab windows just below the colour line, sits a white oval side marker.',
       d: [['Number', '2, round'], ['Diameter', 'about 200 mm, lens about 120 mm'], ['Spacing', 'about 1,000 mm'], ['Centre height', 'about 1,073 mm above rail'], ['Side markers', '2, upright white oval, 780 mm behind the front end, 1,390 mm up']],
       n: 'Height, spacing and size are scaled from the front view of the coloured drawing. The position lamps that the drawing shows on the front face are not in the photo of car 6149, so the model leaves them out.' },
     src: [SRC.col, SRC.photo] },

@@ -14,7 +14,7 @@
 # 1343 mm doors, the 25-seat layout, seat colours and interior finishes; prazsketramvaje.cz for 6102;
 # reference photos of 6102 and 6149 for proportions, livery and details. ASSUMED marks values fitted
 # to the photos that should be measured from a type drawing.
-import bpy, bmesh, math, sys, os
+import bpy, bmesh, math, sys, os, re
 import numpy as np
 from mathutils import Vector, Matrix
 
@@ -501,6 +501,7 @@ mat('cab', (0.15, 0.19, 0.17), rough=0.5)
 mat('tube', (1.0, 0.98, 0.94), rough=0.2, emit=(1, 0.97, 0.9), emit_strength=0.6)
 mat('redpaint', (0.565, 0.0144, 0.0129), rough=0.35, coat=0.12)        # small loose red parts (livery red)
 mat('lettering', (0.80, 0.71, 0.47), rough=0.4, coat=0.3)            # cream boarding signs (coloured elevation)
+mat('handle', (0.78, 0.74, 0.62), rough=0.35, coat=0.25)            # painted door handles (photos of 6102 and 7807)
 def mat_img(name, path, rough=0.4, coat=0.0):
     m = mat(name, rough=rough, coat=coat)
     nt = m.node_tree
@@ -854,7 +855,7 @@ def gasket(f, rect, material='rubber', edges=None, rc=0.035, ka=1.0, step=0.08, 
                 a = a0 if e == 'l' else a1
                 build([(a, b, -1 if e == 'l' else 1, 0) for b in breaks(b0, b1, [], lambda m: step)], False)
 
-def corner_fillets(f, rect, rb, rt, ka, uvf, n=10, rl=None, rr=None):
+def corner_fillets(f, rect, rb, rt, ka, uvf, n=10, rl=None, rr=None, material='paint', inward=False):
     """Fill the corners of a rectangular opening so it reads as rounded (radius rb at the bottom,
     rt at the top, in metres), on the same surface and with the same texture as the mask."""
     a0, a1, b0, b1 = rect
@@ -871,7 +872,7 @@ def corner_fillets(f, rect, rb, rt, ka, uvf, n=10, rl=None, rr=None):
             B = CB + rho * (cyB + ry * math.sin(a) - CB)
             return A / ka, B
         g = lambda t, rho: f(*P(t, rho))
-        add_grid(acc('paint'), g, [k / n for k in range(n + 1)], [0.0, 0.5, 1.0], uvf=lambda t, rho: uvf(*P(t, rho)))
+        add_grid(acc(material), g, [k / n for k in range(n + 1)], [0.0, 0.5, 1.0], uvf=lambda t, rho: uvf(*P(t, rho)), inward=inward)
 
 # ============================================================================== body (vozová skříň)
 BODY = part('body', explode=(0, 1.3, 0))
@@ -1420,6 +1421,8 @@ rod('rear_panel_edge', [nose(REAR, z, y) + normal(rz, z / (1.25 * REAR.q), y) * 
 
 # ============================================================================== doors (four-leaf folding)
 LEAF_T = 0.035
+DW_HALF = 0.100                                      # door windows: 200 mm wide
+DW_UP, DW_LO = (1.613, 2.468), (0.654, 1.541)
 def door(pid, x0, x1):
     e = part(pid, explode=(0, 1.3, 0.8), nomerge=1)
     f = side_pt(1)
@@ -1438,10 +1441,11 @@ def door(pid, x0, x1):
     for i in range(4):
         a, b = x0 + i * (w + gap), x0 + i * (w + gap) + w
         uvf = lambda x, y, a=a: ((x - a) / 0.32, (y - 0.33) / 2.21)
-        # side elevation: visible panes 0.12 m wide, centred 0.215 and 0.485 m either side of the door
-        # centre, upper 1.683-2.418 m, lower 0.784-1.521 m
-        cx_ = (a + b) / 2 + (0.023, -0.046, 0.046, -0.023)[i]
-        glass = [(cx_ - 0.086, cx_ + 0.086, 0.758, 1.547), (cx_ - 0.086, cx_ + 0.086, 1.657, 2.444)]
+        # photos of 6102 and 7807: two tall windows per leaf, centred in it, with fully rounded ends,
+        # ~200 mm wide; the upper one starts ~72 mm under the door top, ~72 mm between them, the lower
+        # one ends ~320 mm above the door bottom
+        cx_ = (a + b) / 2
+        glass = [(cx_ - DW_HALF, cx_ + DW_HALF, DW_LO[0], DW_LO[1]), (cx_ - DW_HALF, cx_ + DW_HALF, DW_UP[0], DW_UP[1])]
         front, back = leaf_pt(0.0), leaf_pt(LEAF_T)
         cells(front, a, b, 0.335, 2.54, glass, 0.4, lambda y: 0.2, lambda y: 'door', uvf=uvf)
         cells(back, a, b, 0.335, 2.54, glass, 0.4, lambda y: 0.2, lambda y: 'door', inward=True, uvf=uvf)
@@ -1451,7 +1455,24 @@ def door(pid, x0, x1):
             add_grid(acc('glass'), leaf_pt(LEAF_T / 2 - 0.003), G0, G1)
             add_grid(acc('glass'), leaf_pt(LEAF_T / 2 + 0.003), G0, G1, inward=True)
             reveal(front, rect, 'door', depth=LEAF_T, uvf=uvf)
-            gasket(front, rect, rc=0.02, step=0.10)
+            rr_ = DW_HALF - 0.002
+            corner_fillets(front, rect, rr_, rr_, 1.0, uvf, n=6, material='door')
+            corner_fillets(back, rect, rr_, rr_, 1.0, uvf, n=6, material='door', inward=True)
+            gasket(front, rect, rc=rr_, step=0.10)
+        if i in (1, 2):
+            # handle on the inside of each inner leaf (one per wing): a painted rod running diagonally across
+            # the lower window, its upper end towards the leaf's hinge side, bent into the frame above and
+            # below the window (photos of 7807 and 6102)
+            sg = -1 if i == 1 else 1
+            def _in(x, y, d):
+                q = back(x, y)
+                return q - normal(f, x, y) * d
+            top, bot = (cx_ + sg * 0.068, DW_LO[1] - 0.05), (cx_ - sg * 0.068, DW_LO[0] + 0.05)
+            pts = [_in(top[0], DW_LO[1] + 0.034, -0.004), _in(top[0], DW_LO[1] + 0.034, 0.030),
+                   _in(top[0], top[1], 0.045), _in(bot[0], bot[1], 0.045),
+                   _in(bot[0], DW_LO[0] - 0.034, 0.030), _in(bot[0], DW_LO[0] - 0.034, -0.004)]
+            for p0, p1 in zip(pts, pts[1:]):
+                cyl_into(acc('handle'), p0 - (p1 - p0).normalized() * 0.006, p1 + (p1 - p0).normalized() * 0.006, 0.0125, 8)
         reveal(front, (a, b, 0.335, 2.54), 'door', depth=LEAF_T, outward=True, uvf=uvf)
         hx = a if i in (0, 1) else b                # hinge knuckles on this leaf's hinge edge
         zf = f(hx, 1.5).z + 0.009
@@ -1484,20 +1505,60 @@ def door(pid, x0, x1):
             if o is not main:
                 rehome(o, pv, main, pv)
                 o.name = f'{pid}.leaf{i}.{m}'
-    xm = (x0 + x1) / 2                               # step well: two ribbed treads with steel nosings
-    za, zc = plan_w(x0) * 1.25, plan_w(x1) * 1.25    # wall line (narrows at the front door)
-    dz = (za + zc) / 2 - 1.25
-    rw = Matrix.Rotation(math.atan2(-(zc - za), x1 - x0), 3, 'Y')
-    box(f'{pid}.tread.upper', (xm, 0.64, 1.00 + dz), (x1 - x0, 0.04, 0.26), 'floor', bevel=0.004, rot=rw)
-    box(f'{pid}.riser.upper', (xm, 0.77, 0.875 + dz), (x1 - x0, 0.26, 0.02), 'under', bevel=0.003, rot=rw)
-    box(f'{pid}.tread.lower', (xm, 0.37, 1.14 + dz), (x1 - x0, 0.04, 0.22), 'floor', bevel=0.004, rot=rw)
-    box(f'{pid}.riser.lower', (xm, 0.495, 1.035 + dz), (x1 - x0, 0.25, 0.02), 'under', bevel=0.003, rot=rw)
-    for yy, zz in ((0.662, 1.125), (0.392, 1.245)):
-        box(f'{pid}.nosing.{yy}', (xm, yy, zz + dz), (x1 - x0, 0.012, 0.03), 'steel', bevel=0.003, rot=rw)
-    for xx in (x0 + 0.06, x1 - 0.06):
-        zz = 0.86 + plan_w(xx) * 1.25 - 1.25
-        cyl(f'{pid}.pole.{xx:.2f}', (xx, FLOOR, zz), (xx, 2.54, zz), 0.016, 'chrome', seg=14)
+    # step well from the plan of the coloured type drawing: the upper ("middle") step is an irregular hexagon
+    # between the floor edge and the edge of the lower step; the lower step runs out to the door. Corners are
+    # traced in plan, placed about the model's door centre and kept at the drawing's distances from the door.
+    # The lower step lies just under the bottom of the leaves, so the folded wings pass over it.
+    hx, dl, posts = STAIRS[pid]
+    xc_d = (dl[0][0] + dl[1][0]) / 2
+    zdoor = lambda x: f(x, 1.5).z + 0.009 - LEAF_T
+    zdl = lambda x: dl[0][1] + (dl[1][1] - dl[0][1]) * (x - dl[0][0]) / (dl[1][0] - dl[0][0])
+    def P(x, z):                                      # drawing plan point -> model (x, z)
+        xm_ = x - xc_d + (x0 + x1) / 2
+        return (xm_, z + zdoor(xm_) - zdl(x))
+    H = [P(*q) for q in hx]
+    D = [P(*q) for q in dl]
+    STAIR_FLOOR[pid] = (D[0][0], H[0], H[1], D[1][0])
+    def prism(name, poly, y0, y1, mat):
+        bm = bmesh.new()
+        bot = [bm.verts.new((x, y0, z)) for x, z in poly]
+        top = [bm.verts.new((x, y1, z)) for x, z in poly]
+        bm.faces.new(top); bm.faces.new(list(reversed(bot)))
+        n = len(poly)
+        for i in range(n):
+            bm.faces.new((bot[i], bot[(i + 1) % n], top[(i + 1) % n], top[i]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bmesh.ops.triangulate(bm, faces=[fc for fc in bm.faces if len(fc.verts) > 4])
+        finish(bm, name, mat, smooth=False)
+    def wall(name, line, y0, y1, mat, t=0.02):
+        for k, (p0, p1) in enumerate(zip(line, line[1:])):
+            dx, dz = p1[0] - p0[0], p1[1] - p0[1]
+            L = math.hypot(dx, dz)
+            box(f'{name}.{k}', ((p0[0] + p1[0]) / 2, (y0 + y1) / 2, (p0[1] + p1[1]) / 2), (L, y1 - y0, t), mat, bevel=0,
+                rot=Matrix.Rotation(-math.atan2(dz, dx), 3, 'Y'))
+    Y_UP, Y_LO = 0.640, 0.325
+    prism(f'{pid}.tread.upper', H, Y_UP - 0.04, Y_UP, 'floor')
+    lower = [H[5], H[4], H[3], H[2], (D[1][0], zdoor(D[1][0])), (D[0][0], zdoor(D[0][0]))]
+    prism(f'{pid}.tread.lower', lower, Y_LO - 0.02, Y_LO, 'floor')        # (20 mm: stays behind the brown bar outside)
+    wall(f'{pid}.riser.upper', [H[0], H[1]], Y_UP, FLOOR, 'under')                     # floor edge down to the upper step
+    wall(f'{pid}.riser.lower', [H[2], H[3], H[4], H[5]], Y_LO, Y_UP - 0.04, 'under')  # upper step down to the lower one
+    wall(f'{pid}.side.l', [(D[0][0], zdoor(D[0][0])), H[5], H[0]], Y_LO - 0.02, FLOOR, 'under')
+    wall(f'{pid}.side.r', [(D[1][0], zdoor(D[1][0])), H[2], H[1]], Y_LO - 0.02, FLOOR, 'under')
+    for nm, line, yy in (('upper', [H[2], H[3], H[4], H[5]], Y_UP), ('floor', [H[0], H[1]], FLOOR)):
+        wall(f'{pid}.nosing.{nm}', line, yy - 0.006, yy + 0.006, 'steel', t=0.03)
+    for k, q in enumerate(posts):                     # grab poles at the corners of the well (plan)
+        xx, zz = P(*q)
+        cyl(f'{pid}.pole.{k}', (xx, FLOOR, zz), (xx, 2.54, zz), 0.016, 'chrome', seg=14)
 
+STAIRS = {   # plan of the coloured type drawing: upper-step hexagon (floor edge first), door line, pole feet
+    'door_middle': ([(-1.382, 0.692), (-0.063, 0.692), (-0.063, 0.893), (-0.376, 0.997), (-1.106, 0.997), (-1.382, 0.893)],
+                    [(-1.382, 1.184), (-0.063, 1.184)], [(-1.434, 0.71), (-0.010, 0.71)]),
+    'door_front': ([(4.693, 0.650), (5.803, 0.505), (5.892, 0.721), (5.624, 0.848), (4.998, 0.933), (4.663, 0.882)],
+                   [(4.655, 1.146), (6.019, 0.997)], [(4.581, 0.69)]),
+    'door_rear': ([(-5.787, 0.513), (-4.661, 0.662), (-4.639, 0.888), (-4.967, 0.938), (-5.593, 0.856), (-5.891, 0.721)],
+                  [(-5.980, 0.982), (-4.631, 1.161)], [(-4.557, 0.68), (-5.891, 0.564)]),
+}
+STAIR_FLOOR = {}
 for pid, x0, x1 in DOOR_SPANS:
     door(pid, x0, x1)
 
@@ -1516,7 +1577,8 @@ for E, holes in ((FRONT, FRONT_HOLES), (REAR, REAR_HOLES)):
 INNER = 1.25 - WALL
 pts = [(-XR, INNER)]
 for _, x0, x1 in sorted(DOOR_SPANS, key=lambda d: d[1]):
-    pts += [(x0, INNER), (x0, 0.865), (x1, 0.865), (x1, INNER)]
+    xa_, h0_, h1_, xb_ = STAIR_FLOOR[_]
+    pts += [(xa_, INNER), h0_, h1_, (xb_, INNER)]
     if x1 < -TAPER_X0 < 0:
         pts += [(-TAPER_X0, INNER)]
 def inner_w(x):
@@ -2124,6 +2186,18 @@ if '--render' in ARGS or '--checks' in ARGS:
         if 'lrearc' in shots: shot('check_lrearc.png', (-10.6, 1.9, -4.3), (-6.5, 1.45, -0.5), lens=38)
         if 'lrearlow' in shots: shot('check_lrearlow.png', (-9.6, 0.55, -3.6), (-6.2, 0.45, -0.6), lens=35)
         if 'tails' in shots: shot('check_tails.png', (-9.2, 1.05, 1.1), (-6.9, 0.95, 0.0), lens=55)
+        _mc = (MD0 + MD1) / 2
+        if '--dooropen' in ARGS:                       # check renders only: leaves opened as on the web page
+            for o in bpy.data.objects:
+                mm = re.search(r'\.leaf(\d)$', o.name)
+                if mm and o.get('hinge'):
+                    o.rotation_euler[2] += {0: 1, 1: -2, 2: 2, 3: -1}[int(mm.group(1))] * math.radians(80)
+        if 'stairsout' in shots: shot('check_stairsout.png', (_mc + 0.3, 1.25, 3.0), (_mc, 0.45, 1.0), lens=28)
+        if 'stairs' in shots: shot('check_stairs.png', (_mc - 0.2, 2.35, -0.15), (_mc - 0.05, 0.45, 1.0), lens=24)
+        if 'stairsf' in shots: shot('check_stairsf.png', (5.3, 2.35, -0.15), (5.3, 0.45, 0.95), lens=24)
+        if 'stairsr' in shots: shot('check_stairsr.png', (-5.3, 2.35, -0.15), (-5.3, 0.45, 1.0), lens=24)
+        if 'doorc' in shots: shot('check_doorc.png', (_mc + 1.2, 1.45, 4.6), (_mc, 1.45, 1.2), lens=40)
+        if 'doorin' in shots: shot('check_doorin.png', (_mc - 1.9, 1.55, -0.2), (_mc + 0.2, 1.15, 1.2), lens=30)
         if 'stepside' in shots: shot('check_stepside.png', (8.8, 0.75, 1.55), (3.6, 0.45, 1.10), lens=35)
         if 'panto' in shots: shot('check_panto.png', (9.5, 4.6, 3.2), (3.2, 4.0, 0.0), lens=45)
         if 'front' in shots: shot('check_front.png', (9.5, 1.7, 0.6), (6.5, 1.5, 0.0), lens=40)
