@@ -8,6 +8,18 @@
 
 Interaktivní 3D model první pražské tramvaje Tatra T3, prototypu 6101 z roku 1960, postavený v rozměrech druhého prototypu 6102. Otáčení, přiblížení, rozložení na díly, otevírání dveří, pohled do interiéru a karta ke každému dílu s popisem a technickými údaji. Česky a anglicky.
 
+## Interiér / Interior
+
+24 jednotlivých sedadel podle půdorysu typového výkresu, tvary a barvy podle fotografií vozu 6149 (salon, plošiny) a 6102 (stanoviště řidiče).
+24 single seats laid out from the plan of the type drawing; shapes and colours from photos of car 6149 (saloon, platforms) and 6102 (cab).
+
+| | |
+|---|---|
+| ![Salon](docs/interior_saloon.png) | ![Přední plošina](docs/interior_front.png) |
+| ![Zadní plošina](docs/interior_rear.png) | ![Stanoviště](docs/interior_cab.png) |
+
+![Interiér v prohlížeči / interior in the viewer](docs/interior_web.png)
+
 ## Spuštění / Running it
 
 - **Online / live demo:** [root-code-11.github.io/t3-3d-manual](https://root-code-11.github.io/t3-3d-manual/)
@@ -51,6 +63,7 @@ python3 blender/compare_front.py <celo_vykres.jpg> out/id_front.png  # tabulka o
 python3 blender/compare_side.py <bok_vykres.jpg> out/id_right.png    # pravý bok / right side
 python3 blender/compare_left.py <levy_bok.jpg> out/id_left.png       # levý bok / left side
 python3 blender/compare_rear.py <zad_vykres.jpg> out/id_rear.png      # záď / rear
+python3 blender/compare_plan.py <pudorys.jpg> out/in_plan.png         # sedadla v půdorysu / seats in plan
 ```
 
 Výsledky / results: [docs/front-check](docs/front-check/index.html), [docs/side-check](docs/side-check/index.html), [docs/left-check](docs/left-check/index.html), [docs/rear-check](docs/rear-check/index.html), [docs/corner-check](docs/corner-check/index.html), [docs/left-rear-check](docs/left-rear-check/index.html)
