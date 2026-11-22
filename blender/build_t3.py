@@ -571,6 +571,8 @@ mat('lens', (0.92, 0.9, 0.84), rough=0.06, emit=(1.0, 0.93, 0.78), emit_strength
 mat('redlens', (0.45, 0.02, 0.02), rough=0.12, emit=(0.4, 0.0, 0.0), emit_strength=0.3)
 mat('lamp', (0.93, 0.91, 0.84), rough=0.15)
 mat('signtext', (0.80, 0.80, 0.745), rough=0.4, emit=(1, 1, 0.94), emit_strength=0.10)   # off-white ~#E8E8E0, not pure white
+mat('door_in', (0.155, 0.153, 0.138), rough=0.45, coat=0.1)            # inner face of the door leaves ~#6E6D68
+mat('condgrey', (0.10, 0.105, 0.115), rough=0.5)                    # conductor's platform and front panel: dark grey
 mat('signfield', (0.0056, 0.0056, 0.0056), rough=0.6)                 # black field of the blind ~#111111
 mat('signrim', (0.70, 0.71, 0.72), metal=1.0, rough=0.30)              # thin light grey / silver rim round the field
 mat('lipchrome', (0.584, 0.611, 0.645), metal=1.0, rough=0.25)         # polished strip along the lip over the windscreen (~#C9CDD2)
@@ -768,6 +770,20 @@ def tube(name, pts, r, material, seg=6, caps=True):
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     return finish(bm, name, material, smooth=True, sharp=80)
 
+def oval_tube(name, x0, x1, c, eu, ev, a, b, material, seg=12, ends=True):
+    """A straight tube along x with an elliptic cross-section (semi-axes a along eu, b along ev), centre c (y, z)."""
+    bm = bmesh.new()
+    rings = []
+    for x in (x0, x1):
+        rings.append([bm.verts.new(Vector((x, c.y, c.z)) + eu * (a * math.cos(2 * math.pi * k / seg)) + ev * (b * math.sin(2 * math.pi * k / seg)))
+                      for k in range(seg)])
+    for k in range(seg):
+        bm.faces.new([rings[0][k], rings[0][(k + 1) % seg], rings[1][(k + 1) % seg], rings[1][k]])
+    if ends:
+        bm.faces.new(list(reversed(rings[0]))); bm.faces.new(rings[1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return finish(bm, name, material, smooth=True, sharp=70)
+
 def sweep(name, path, r, material, seg=10, closed=False):
     """A round tube along a path of points (springs, chains)."""
     bm = bmesh.new()
@@ -789,7 +805,7 @@ def sweep(name, path, r, material, seg=10, closed=False):
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     return finish(bm, name, material, smooth=True, sharp=80)
 
-def lathe(name, profile, x, sz, material, seg=48):
+def lathe(name, profile, x, sz, material, seg=36):     # (36: <1.5 mm off round at the tread)
     """Revolve a (radius, axial offset) profile round a wheel axis at (x, axle height), along z * sz."""
     bm = bmesh.new()
     rings = []
@@ -1108,9 +1124,6 @@ for side in (1, -1):
     pts = [(xr - 0.035, 2.505), (xr - 0.03, 2.55), (xr, 2.584)] + [(x, 2.584) for x in np.linspace(xr + 0.25, xf - 0.25, 12)] + \
           [(xf, 2.584), (xf + 0.03, 2.55), (xf + 0.035, 2.505)]
     rod(f'gutter.{side}', [f(x, y) + normal(f, x, y) * 0.011 for x, y in pts], 0.011, 'rubber', seg=8)
-# side route board behind the top of the third window from the front (right side, coloured elevation)
-p0 = surf(3.775, u_of_y(2.372), 1) - Vector((0, 0, 0.03))
-box('side_route_board', p0, (1.07, 0.205, 0.02), 'darkmetal', bevel=0.006)
 # four small outlined plates just ahead of the middle door, two at window height and two in the red band
 # (side elevation; door push buttons or signal lamps)
 for k, yc in enumerate((2.375, 1.925, 1.445, 0.995)):
@@ -1588,8 +1601,8 @@ for s in (1, -1):
     z, y = s * 0.50, 1.073                           # front elevation: 1.00 m apart, centres 1.073 m up, ~200 mm
     p = nose(FRONT, z, y)
     n = normal(fz, z / 1.2, y)
-    fixed_uv(cyl(f'headlamp.body.{s}', p - n * 0.02, p + n * 0.05, 0.10, 'paint', seg=40, bevel=0.01), (0.5, 0.82))
-    cyl(f'headlamp.rim.{s}', p + n * 0.048, p + n * 0.064, 0.099, 'chrome', seg=40, bevel=0.006)
+    fixed_uv(cyl(f'headlamp.body.{s}', p - n * 0.02, p + n * 0.05, 0.109, 'paint', seg=40, bevel=0.01), (0.5, 0.82))
+    cyl(f'headlamp.rim.{s}', p + n * 0.048, p + n * 0.064, 0.108, 'chrome', seg=40, bevel=0.006)   # rim ~215 mm across (front elevation)
     cyl(f'headlamp.lens.{s}', p + n * 0.064, p + n * 0.080, 0.062, 'lens', seg=40, r2=0.050)
     # (no position lamps on the front face: photo of 6149, which shows only the side markers)
 
@@ -1599,9 +1612,9 @@ part('mirror', explode=(1.0, 1.3, 0.6))
 # behind the front end, ~1.82 m up (side elevation and the measured values).
 _ff = side_pt(1)
 for s in (1, -1):
-    xm = 6.49
-    root = surf(xm + 0.03, u_of_y(1.665), s)
-    nr = normal(_ff, xm + 0.03, 1.665); nr = Vector((nr.x, nr.y, s * abs(nr.z)))
+    xm = 6.46                                         # (side elevation: head at 6.457 m; across the car as in the photo of 6102)
+    root = surf(6.52, u_of_y(1.665), s)               # (foot where it was: on the body just above the colour line)
+    nr = normal(_ff, 6.52, 1.665); nr = Vector((nr.x, nr.y, s * abs(nr.z)))
     sd = surf(xm, u_of_y(1.825), s)
     hc = Vector((xm, 1.825, sd.z + s * 0.085))
     rod(f'mirror.stalk.{s}', [root - nr * 0.01, root + nr * 0.03 + Vector((0, 0.035, 0)),
@@ -1685,7 +1698,9 @@ def _pill_lens(name, TM, keep, mat):
 def _face_ang(z, y):
     n = normal(rz, z / (1.25 * REAR.q), y)
     return math.degrees(math.acos(max(-1.0, min(1.0, -n.x / n.length))))
-TL_Z = max(z for z in np.linspace(0.39, 0.80, 83) if _face_ang(z + 0.133, 0.95) <= 33.0)
+# (r25) rear elevation: unit centres at -0.384 / +0.397 m; the photo of 6149 from behind agrees - each unit sits
+# just beyond an end of the car number, their spacing twice the number's width in both
+TL_Z = 0.39
 print('TAIL', round(TL_Z, 3), round(_face_ang(TL_Z, 0.95), 1), round(_face_ang(TL_Z + 0.133, 0.95), 1))
 for s in (1, -1):
     p = nose(REAR, s * TL_Z, 0.950)
@@ -1734,7 +1749,7 @@ def door(pid, x0, x1):
         glass = [(cx_ - DW_HALF, cx_ + DW_HALF, DW_LO[0], DW_LO[1]), (cx_ - DW_HALF, cx_ + DW_HALF, DW_UP[0], DW_UP[1])]
         front, back = leaf_pt(0.0), leaf_pt(LEAF_T)
         cells(front, a, b, LEAF_Y0, 2.54, glass, 0.4, lambda y: 0.2, lambda y: 'door', uvf=uvf)
-        cells(back, a, b, LEAF_Y0, 2.54, glass, 0.4, lambda y: 0.2, lambda y: 'door', inward=True, uvf=uvf)
+        cells(back, a, b, LEAF_Y0, 2.54, glass, 0.4, lambda y: 0.2, lambda y: 'door_in', inward=True, uvf=uvf)   # inner face: warm grey
         for rect in glass:
             G0 = [rect[0] - 0.01, rect[1] + 0.01]
             G1 = breaks(rect[2] - 0.01, rect[3] + 0.01, [], lambda m: 0.3)
@@ -1743,7 +1758,7 @@ def door(pid, x0, x1):
             reveal(front, rect, 'door', depth=LEAF_T, uvf=uvf)
             rr_ = DW_HALF - 0.002
             corner_fillets(front, rect, rr_, rr_, 1.0, uvf, n=6, material='door')
-            corner_fillets(back, rect, rr_, rr_, 1.0, uvf, n=6, material='door', inward=True)
+            corner_fillets(back, rect, rr_, rr_, 1.0, uvf, n=6, material='door_in', inward=True)
             gasket(front, rect, rc=rr_, step=0.10)
         if i in (1, 2):
             # handle on the inside of each inner leaf (one per wing): a painted rod running diagonally across
@@ -1944,15 +1959,66 @@ finish(bm, 'floor', 'floor', smooth=False)
 # ------------------------------------------------------------------------------ interior fittings
 # Layout from the plan of the coloured type drawing (front to the right, doors along the bottom edge),
 # shapes, materials and colours from the photos of 6149 (saloon, both platforms) and 6102 (cab).
-SEAT_Y = FLOOR + 0.43                                 # top of the seat cushion
+SEAT_Y = FLOOR + 0.43
+SEAT_Y_ = SEAT_Y                                 # top of the seat cushion
 SEAT_D, SEAT_W = 0.376, 0.43                          # plan footprint of a seat: back to cushion front, across
 _ZW = lambda x: plan_w(x) * 1.25 - WALL               # inner half-width of the saloon at floor level
 
-def seat(name, xc, zc, facing=(1, 0), d=SEAT_D, w=SEAT_W):
+# ------------------------------------------------------------------------------ signs (image panels)
+from PIL import Image as _Im, ImageDraw as _ImD, ImageFont as _ImF
+_SIGN_DIR = os.path.join(TEX, 'signs'); os.makedirs(_SIGN_DIR, exist_ok=True)
+_RED = (176, 22, 30)
+def _font(px, bold=True):
+    return _ImF.truetype(os.path.join(HERE, 'fonts', 'BarlowSemiCondensed-SemiBold.ttf'), px)
+def sign_image(name, w, h, draw_fn, bg=(246, 244, 236)):
+    im = _Im.new('RGBA' if len(bg) == 4 else 'RGB', (w, h), bg)
+    draw_fn(_ImD.Draw(im))
+    path = os.path.join(_SIGN_DIR, f'{name}.png'); im.save(path)
+    return path
+def img_mat(name, path):
+    m = bpy.data.materials.new(name); m.use_nodes = True
+    nt = m.node_tree; p = nt.nodes['Principled BSDF']
+    t = nt.nodes.new('ShaderNodeTexImage'); t.image = bpy.data.images.load(path, check_existing=True)
+    nt.links.new(t.outputs['Color'], p.inputs['Base Color'])
+    p.inputs['Roughness'].default_value = 0.5
+    M[name] = m
+    return m
+def img_mat_alpha(name, path):
+    """Image material whose transparent parts are cut away (glTF alpha mask): lettering painted on a surface."""
+    m = img_mat(name, path)
+    nt = m.node_tree; p = nt.nodes['Principled BSDF']
+    t = [n for n in nt.nodes if n.type == 'TEX_IMAGE'][0]
+    nt.links.new(t.outputs['Alpha'], p.inputs['Alpha'])
+    for attr, val in (('blend_method', 'CLIP'), ('alpha_threshold', 0.5)):
+        if hasattr(m, attr):
+            try: setattr(m, attr, val)
+            except Exception: pass
+    return m
+def quad(name, corners, material):
+    """Textured quad; corners in tram coordinates: bottom-left, bottom-right, top-right, top-left
+    (as seen by the viewer)."""
+    bm = bmesh.new()
+    vs = [bm.verts.new(c) for c in corners]
+    f_ = bm.faces.new(vs)
+    uv = bm.loops.layers.uv.new()
+    for l, (u, v) in zip(f_.loops, ((0, 0), (1, 0), (1, 1), (0, 1))):
+        l[uv].uv = (u, v)
+    return finish(bm, name, material, smooth=False)
+
+def _rivets(d):
+    W_, H_ = 256, 352
+    pts = [(x, 22) for x in (22, 99, 157, 234)] + [(x, H_ - 22) for x in (22, 99, 157, 234)] + \
+          [(22, y) for y in (110, 176, 242)] + [(234, y) for y in (110, 176, 242)]
+    for x, y in pts:
+        d.ellipse((x - 6, y - 6, x + 6, y + 6), fill=(168, 168, 164)); d.ellipse((x - 3, y - 4, x + 2, y + 1), fill=(222, 222, 218))
+img_mat('seat_rivets', sign_image('seat_rivets', 256, 352, _rivets, bg=(186, 44, 40)))
+
+def seat(name, xc, zc, facing=(1, 0), d=SEAT_D, w=SEAT_W, lift=0.0):
     """Single seat: red vinyl cushion and tall backrest held in a beige tube frame that forms a loop
     handle along the top of the back; one beige pedestal on the wall side, no legs on the aisle side.
     (xc, zc) is the centre of the plan footprint; facing is the direction the passenger looks."""
     fx, fz = facing
+    SEAT_Y = SEAT_Y_ + lift                           # (lift: the conductor's seat stands on a platform)
     ax = Vector((fx, 0, fz))                          # forwards
     sx = Vector((-fz, 0, fx))                         # across the seat
     c = Vector((xc, 0, zc))
@@ -1964,16 +2030,20 @@ def seat(name, xc, zc, facing=(1, 0), d=SEAT_D, w=SEAT_W):
     h = w / 2 + 0.002                                 # tube centre line, each side, just outside the cushions
     box(f'{name}.cushion', P(0.035, SEAT_Y - 0.045, 0), (d - 0.066, 0.09, w - 0.03), 'leather_red', bevel=0.025, rot=rot)
     box(f'{name}.back', P(back_x, SEAT_Y + 0.285, 0), (0.06, 0.47, w - 0.05), 'leather_red', bevel=0.028, rot=rot)
+    if 'seat_rivets' in M:                            # rivets round the back of the backrest (photo of 6241)
+        hw_, a_ = (w - 0.05) / 2 - 0.028, back_x - 0.0305
+        y0_, y1_ = SEAT_Y + 0.05 + 0.028, SEAT_Y + 0.52 - 0.028
+        quad(f'{name}.rivets', [P(a_, y0_, -hw_), P(a_, y0_, hw_), P(a_, y1_, hw_), P(a_, y1_, -hw_)], 'seat_rivets')
     # the tube runs under the cushion sides, rises behind the back edges and turns over the top in large
     # rounded corners (an upside-down U), just above the backrest (photo of 6149)
     path = [P(d / 2 - 0.04, SEAT_Y - 0.09, -h), P(back_x - 0.02, SEAT_Y - 0.09, -h), P(back_x - 0.035, SEAT_Y + 0.555, -h),
             P(back_x - 0.035, SEAT_Y + 0.555, h), P(back_x - 0.02, SEAT_Y - 0.09, h), P(d / 2 - 0.04, SEAT_Y - 0.09, h)]
-    tube(f'{name}.frame', fillet(path, [0.035, 0.085, 0.085, 0.035], n=4), 0.011, 'beige', seg=6)
+    tube(f'{name}.frame', fillet(path, [0.035, 0.085, 0.085, 0.035], n=3), 0.011, 'beige', seg=6)
     wall = Vector((0, 0, 1 if zc > 0 else -1))
     if abs(fz) > 0.5:
         wall = -ax                                    # seat facing the aisle: pedestal under the back, at the wall
     pc = c + wall * 0.10
-    cyl(f'{name}.pedestal', (pc.x, FLOOR, pc.z), (pc.x, SEAT_Y - 0.10, pc.z), 0.11, 'beige', seg=10, r2=0.065)
+    cyl(f'{name}.pedestal', (pc.x, FLOOR + lift, pc.z), (pc.x, SEAT_Y - 0.10, pc.z), 0.11, 'beige', seg=10, r2=0.065)
 
 # plan: cushion footprints (centre x, centre z), traced from the red seats of the plan (167.7 px/m)
 SEATS_L = [(-5.596, -0.692), (-4.842, -0.811), (-4.099, -0.906), (-3.351, -0.906), (-2.603, -0.906), (-1.851, -0.906),
@@ -1990,7 +2060,23 @@ for i, (x, z) in enumerate(SEATS_R):
 # small sloping top panel and four buttons; behind it, against the wall, the conductor's seat facing
 # the aisle; a beige rail closes it off at the front and a pole rises at the desk corner
 XC = 1.869
-seat('conductor.seat', XC, 0.778, facing=(0, -1), d=0.322, w=0.455)   # plan: 435 x 322 mm
+# (photo of 6241 and plan) the post is an L in plan: the desk along the aisle and, from its front end, a
+# panel across to the side wall, the same height, grey below a light wooden top; inside the L the
+# conductor's seat stands on a raised platform (~250 mm), dark grey with a thin aluminium edge, so that
+# its cushion is clearly above all passenger seats
+COND_LIFT = 0.25
+_cx0, _cx1 = 1.875 - 0.33, 1.875 + 0.33 - 0.04          # platform from the desk's rear end to the front panel
+_cz0 = 0.475 + 0.12                                      # behind the desk
+_czw = _ZW(1.875) - 0.005
+box('conductor.platform', ((_cx0 + _cx1) / 2, FLOOR + COND_LIFT / 2, (_cz0 + _czw) / 2), (_cx1 - _cx0, COND_LIFT, _czw - _cz0),
+    'condgrey', bevel=0.006)
+rod('conductor.platform.trim', [(_cx0 - 0.004, FLOOR + COND_LIFT, _cz0 + 0.01), (_cx0 - 0.004, FLOOR + COND_LIFT, _czw - 0.01)], 0.006, 'alu', seg=6)
+box('conductor.platform.trim_face', (_cx0 - 0.002, FLOOR + COND_LIFT - 0.015, (_cz0 + _czw) / 2), (0.004, 0.03, _czw - _cz0 - 0.01), 'alu', bevel=0)
+_lx = 1.875 + 0.33 - 0.02                                 # front panel (short leg of the L), desk front end to the wall
+_lz0, _lzw = 0.475 - 0.12, _ZW(_lx) - 0.005
+box('conductor.front_panel', (_lx, FLOOR + 0.465, (_lz0 + _lzw) / 2), (0.04, 0.93, _lzw - _lz0), 'condgrey', bevel=0.006)
+box('conductor.front_panel.top', (_lx, FLOOR + 0.945, (_lz0 + _lzw) / 2), (0.07, 0.03, _lzw - _lz0 + 0.01), 'umakart', bevel=0.006)
+seat('conductor.seat', XC, 0.778, facing=(0, -1), d=0.322, w=0.465, lift=COND_LIFT)   # plan: 435 x 322 mm (cushion w - 30 mm)
 box('conductor.desk', (1.875, FLOOR + 0.48, 0.475), (0.66, 0.96, 0.24), 'beige', bevel=0.012)
 box('conductor.desk_top', (1.875, FLOOR + 0.985, 0.49), (0.62, 0.05, 0.20), 'umakart', bevel=0.008,
     rot=Matrix.Rotation(math.radians(-12), 3, 'X'))
@@ -2001,23 +2087,25 @@ tube('conductor.pole', fillet([(2.20, FLOOR, 0.36), (2.20, RAIL_Y - 0.10, 0.36),
 
 # screens beside the step wells and the conductor's stand (plan: rails from the wall out to ~0.74 m):
 # a beige rail bent from the floor up to waist height and back to the wall
-for xr in (-4.555, -1.437, -0.015, 4.582, 2.191):
+for xr in (-4.555, -1.437, -0.015, 4.582):      # (by the conductor: the post's front panel)
     zw = _ZW(xr) - 0.01
     tube(f'screen.{xr:+.2f}', fillet([(xr, FLOOR, 0.74), (xr, FLOOR + 0.90, 0.74), (xr, FLOOR + 0.90, zw)], 0.06, n=3), 0.014, 'beige', seg=8)
 
-# ceiling: two long beige tube rails along the aisle (plan), hung on short curved brackets; at both ends
-# of the saloon they turn in large rounded corners into a cross bar; straight cross bars over the
-# middle and front door areas (photo of 6149)
-RZ = 0.42
-X_RR, X_RF = -5.90, 4.85                             # rear end of the saloon, front cross bar behind the cab
-tube('handrail.loop', fillet([(X_RF, RAIL_Y, 0.0), (X_RF, RAIL_Y, -RZ), (X_RR, RAIL_Y, -RZ), (X_RR, RAIL_Y, RZ), (X_RF, RAIL_Y, RZ),
-                              (X_RF, RAIL_Y, 0.0)], 0.16, n=4), 0.014, 'beige', seg=8, caps=False)
+# ceiling: four long beige tube rails (photos of 6149 and 6241): on each side an inner rail over the edge of
+# the aisle (plan, ~0.42 m from the centre line) and an outer one above the seats near where the wall
+# curves into the ceiling; at both ends of the saloon the two rails of a side join in a rounded bend.
+# All hang on short inverted-V hangers every ~1.7 m; straight cross bars over the middle door area.
+RZ, RZO = 0.42, 0.80
+X_RR, X_RF = -5.90, 4.85                             # rear end of the saloon, front end behind the cab
+for sg in (-1, 1):
+    zi, zo = sg * RZ, sg * RZO
+    tube(f'handrail.loop.{sg:+d}', fillet([(X_RF, RAIL_Y, (zi + zo) / 2), (X_RF, RAIL_Y, zi), (X_RR, RAIL_Y, zi), (X_RR, RAIL_Y, zo),
+                                           (X_RF, RAIL_Y, zo), (X_RF, RAIL_Y, (zi + zo) / 2)], 0.19, n=4), 0.014, 'beige', seg=8, caps=False)
 for x in (-5.0, -3.3, -1.6, 0.1, 1.8, 3.5):
-    for zz in (-RZ, RZ):
-        sg = 1 if zz > 0 else -1
-        z2 = zz + sg * 0.10
-        tube(f'handrail.bracket.{zz}.{x}', fillet([(x, RAIL_Y + 0.012, zz), (x, RAIL_Y + 0.07, zz), (x, ceil_y(z2) + 0.01, z2)], 0.05, n=3),
-             0.008, 'beige', seg=6)
+    for zz in (-RZO, -RZ, RZ, RZO):
+        top = (x, ceil_y(zz, x) + 0.008, zz)
+        for dx in (-0.07, 0.07):
+            cyl(f'handrail.hanger.{zz}.{x}.{dx}', (x + dx, RAIL_Y + 0.010, zz), top, 0.007, 'beige', seg=5)
 for _, x0, x1 in DOOR_SPANS:
     xm = (x0 + x1) / 2
     if xm > 4.9 or xm < -5.0:
@@ -2034,11 +2122,14 @@ for zz in (-1.03, 1.03):
     R = Matrix.Rotation(al, 3, 'X')
     nin = R @ Vector((0, -1, 0))                       # into the car, square to the curve
     c0 = Vector((0, yc, zz)) + nin * 0.032
+    ew = R @ Vector((0, 0, 1))                         # across the lamp, along the curve
+    cl = Vector((0, yc, zz)) + nin * 0.052             # lamp axis, just off the ceiling
     for k in range(7):
         x = -5.15 + k * 1.58
-        box(f'lampcase.{zz}.{k}', (x, c0.y, c0.z), (1.30, 0.06, 0.17), 'ceiling', bevel=0.018, rot=R)
-        q = c0 + nin * 0.031
-        box(f'tube.{zz}.{k}', (x, q.y, q.z), (1.22, 0.006, 0.13), 'diffuser', bevel=0, rot=R)
+        # (photos of 6149 and 6241) an oval opal tube, beige plastic end caps
+        oval_tube(f'lamp.{zz}.{k}', x - 0.58, x + 0.58, cl, ew, nin, 0.072, 0.042, 'diffuser', seg=12, ends=False)
+        for e0, e1 in ((x - 0.65, x - 0.58), (x + 0.58, x + 0.65)):
+            oval_tube(f'lamp.{zz}.{k}.cap{e0:.2f}', e0, e1, cl, ew, nin, 0.076, 0.045, 'beige', seg=12)
 
 # light ventilation hatches in the middle of the ceiling, under the three roof vents
 for i, (x0, x1) in enumerate(((-5.796, -4.624), (-1.310, -0.138), (4.137, 4.98))):
@@ -2101,6 +2192,12 @@ for i, ((xa, za), (xb, zb)) in enumerate(zip(CAB_WALL, CAB_WALL[1:])):
     mid = ((xa + xb) / 2, (za + zb) / 2)
     box(f'partition.panel.{i}', (mid[0], (FLOOR + P_LO) / 2, mid[1]), (L, P_LO - FLOOR, 0.03), 'cab', bevel=0.004, rot=rot)
     box(f'partition.kick.{i}', (mid[0], FLOOR + 0.05, mid[1]), (L, 0.10, 0.036), 'alu', bevel=0, rot=rot)
+    # lower panel trim (photo of 6149): a flat aluminium band along the top of the panel under the rail,
+    # and on the longer panels an upright aluminium strip dividing them
+    box(f'partition.trim.{i}', (mid[0], P_LO - 0.035, mid[1]), (L, 0.04, 0.036), 'alu', bevel=0, rot=rot)
+    if L > 0.6:
+        box(f'partition.divider.{i}', (mid[0], (FLOOR + 0.10 + P_LO - 0.055) / 2, mid[1]), (0.03, P_LO - 0.055 - FLOOR - 0.10, 0.036),
+            'alu', bevel=0, rot=rot)
     box(f'partition.glass.{i}', (mid[0], (P_LO + P_HI) / 2, mid[1]), (L, P_HI - P_LO, 0.008), 'glass', bevel=0, rot=rot)
     for yy in (P_LO, P_HI):
         cyl(f'partition.rail.{i}.{yy:.2f}', (xa, yy, za), (xb, yy, zb), 0.014, 'alu', seg=8)
@@ -2137,34 +2234,7 @@ for i, dz in enumerate((-0.20, 0.0, 0.20)):          # the T3 is driven with thr
     box(f'cab.pedal.{i}', (6.16, FLOOR + 0.05, CZ + dz), (0.22, 0.03, 0.10), 'rubber', bevel=0.006, rot=rot_z(-15))
 
 # ------------------------------------------------------------------------------ signs (image panels)
-from PIL import Image as _Im, ImageDraw as _ImD, ImageFont as _ImF
-_SIGN_DIR = os.path.join(TEX, 'signs'); os.makedirs(_SIGN_DIR, exist_ok=True)
-_RED = (176, 22, 30)
-def _font(px, bold=True):
-    return _ImF.truetype(os.path.join(HERE, 'fonts', 'BarlowSemiCondensed-SemiBold.ttf'), px)
-def sign_image(name, w, h, draw_fn, bg=(246, 244, 236)):
-    im = _Im.new('RGB', (w, h), bg)
-    draw_fn(_ImD.Draw(im))
-    path = os.path.join(_SIGN_DIR, f'{name}.png'); im.save(path)
-    return path
-def img_mat(name, path):
-    m = bpy.data.materials.new(name); m.use_nodes = True
-    nt = m.node_tree; p = nt.nodes['Principled BSDF']
-    t = nt.nodes.new('ShaderNodeTexImage'); t.image = bpy.data.images.load(path, check_existing=True)
-    nt.links.new(t.outputs['Color'], p.inputs['Base Color'])
-    p.inputs['Roughness'].default_value = 0.5
-    M[name] = m
-    return m
-def quad(name, corners, material):
-    """Textured quad; corners in tram coordinates: bottom-left, bottom-right, top-right, top-left
-    (as seen by the viewer)."""
-    bm = bmesh.new()
-    vs = [bm.verts.new(c) for c in corners]
-    f_ = bm.faces.new(vs)
-    uv = bm.loops.layers.uv.new()
-    for l, (u, v) in zip(f_.loops, ((0, 0), (1, 0), (1, 1), (0, 1))):
-        l[uv].uv = (u, v)
-    return finish(bm, name, material, smooth=False)
+# (helpers defined before the seats)
 
 def _cab_sign(d):
     d.text((40, 30), '24 MÍST K SEDĚNÍ', font=_font(44), fill=_RED)
@@ -2181,15 +2251,46 @@ box('cab.mirror.frame', (_xp - 0.03, 2.55, 0.66), (0.02, 0.15, 0.22), 'darkmetal
 box('cab.mirror.glass', (_xp - 0.042, 2.55, 0.66), (0.004, 0.12, 0.19), 'mirror', bevel=0)
 cyl('cab.mirror.arm', (_xp - 0.02, 2.55, 0.66), (_xp + 0.02, 2.62, 0.78), 0.008, 'alu', seg=6)
 
-# white cover over the front door with VSTUP in red, facing into the car
+# white covers over the doors (door mechanism) with VSTUP / VÝSTUP in red, facing into the car: the
+# front one as before; identical ones, centred, over the middle and rear doors (photos of 6149 and 6241)
+def _door_word(word):
+    def draw(d):
+        f_ = _font(108); bb = d.textbbox((0, 0), word, font=f_)
+        d.text(((512 - (bb[2] - bb[0])) / 2 - bb[0], 6), word, font=f_, fill=_RED)
+    return draw
 img_mat('sign_vstup', sign_image('vstup', 512, 128, lambda d: d.text((150, 6), 'VSTUP', font=_font(108), fill=_RED)))
-_xa, _xb = FD0 + 0.10, FD1 - 0.12
-_za, _zb = _ZW(_xa) - 0.13, _ZW(_xb) - 0.13
-box('sign.vstup.case', ((_xa + _xb) / 2, 2.635, (_za + _zb) / 2 + 0.065), (_xb - _xa, 0.15, 0.13), 'ceiling', bevel=0.01,
-    rot=Matrix.Rotation(-math.atan2(_zb - _za, _xb - _xa), 3, 'Y'))
-_zq = lambda x: _za + (_zb - _za) * (x - _xa) / (_xb - _xa) - 0.002
-quad('sign.vstup', [(_xb - 0.25, 2.585, _zq(_xb - 0.25)), (_xa + 0.25, 2.585, _zq(_xa + 0.25)),
-                    (_xa + 0.25, 2.695, _zq(_xa + 0.25)), (_xb - 0.25, 2.695, _zq(_xb - 0.25))], 'sign_vstup')
+img_mat('sign_vystup', sign_image('vystup', 512, 128, _door_word('VÝSTUP')))
+_blen = (FD1 - 0.12) - (FD0 + 0.10)
+for tag, (x0_, x1_), mat_ in (('vstup', (FD0, FD1), 'sign_vstup'), ('vystup_mid', (MD0, MD1), 'sign_vystup'),
+                              ('vystup_rear', (RD0, RD1), 'sign_vystup')):
+    if tag == 'vstup':
+        _xa, _xb = FD0 + 0.10, FD1 - 0.12
+    else:
+        _xa = (x0_ + x1_) / 2 - _blen / 2; _xb = _xa + _blen
+    _za, _zb = _ZW(_xa) - 0.13, _ZW(_xb) - 0.13
+    box(f'sign.{tag}.case', ((_xa + _xb) / 2, 2.635, (_za + _zb) / 2 + 0.065), (_xb - _xa, 0.15, 0.13), 'ceiling', bevel=0.01,
+        rot=Matrix.Rotation(-math.atan2(_zb - _za, _xb - _xa), 3, 'Y'))
+    _zq = lambda x, _za=_za, _zb=_zb, _xa=_xa, _xb=_xb: _za + (_zb - _za) * (x - _xa) / (_xb - _xa) - 0.002
+    quad(f'sign.{tag}', [(_xb - 0.25, 2.585, _zq(_xb - 0.25)), (_xa + 0.25, 2.585, _zq(_xa + 0.25)),
+                         (_xa + 0.25, 2.695, _zq(_xa + 0.25)), (_xb - 0.25, 2.695, _zq(_xb - 0.25))], mat_)
+
+# (no side route board: removed at the owner's request)
+
+# aluminium edging strips across the aisle where the floor mat sections meet (photos of 6149 and 6241)
+for xj in (-4.00, -2.10, 0.35, 2.45, 4.30):
+    box(f'floor.joint.{xj:+.2f}', (xj, FLOOR + 0.002, 0.0), (0.025, 0.004, 1.16), 'alu', bevel=0)
+
+# "POSTUPTE DALE DO VOZU" in red over the door-side windows, just ahead of the conductor's post (photo of 6241)
+def _postupte(d):
+    f_ = _ImF.truetype(os.path.join(HERE, 'fonts', 'BarlowCondensed-Bold.ttf'), 78)
+    t_ = 'POSTUPTE DÁLE DO VOZU'
+    bb = d.textbbox((0, 0), t_, font=f_)
+    d.text(((1600 - (bb[2] - bb[0])) / 2 - bb[0], (110 - (bb[3] - bb[1])) / 2 - bb[1]), t_, font=f_, fill=(176, 22, 30, 255))
+img_mat_alpha('sign_postupte', sign_image('postupte', 1600, 110, _postupte, bg=(0, 0, 0, 0)))
+_fw = side_pt(1)
+_pp = lambda x, y: _fw(x, y) - normal(_fw, x, y) * (WALL + 0.003)
+_px0, _px1, _py0, _py1 = 2.35, 3.15, 2.585, 2.645     # above the window frame (seen from inside the car: left is +x)
+quad('sign.postupte', [_pp(_px1, _py0), _pp(_px0, _py0), _pp(_px0, _py1), _pp(_px1, _py1)], 'sign_postupte')
 
 # ------------------------------------------------------------------------------ rear platform
 # beige grab rail round the rear wall (plan), across the rear window (photo of 6149)
@@ -2347,10 +2448,10 @@ def wheelset(pid, x, explode):
     for sz in (-1, 1):
         lathe(f'{pid}.tread.{sz}', [(r, B2B + w) for r, w in TREAD], x, sz, 'tread')
         lathe(f'{pid}.rim.{sz}', [(r, B2B + w) for r, w in RIM], x, sz, 'cast')
-    cyl(f'{pid}.axle', (x, AXLE_Y, -B2B - 0.20), (x, AXLE_Y, B2B + 0.20), 0.065, 'cast', seg=20, bevel=0.005)
+    cyl(f'{pid}.axle', (x, AXLE_Y, -B2B - 0.20), (x, AXLE_Y, B2B + 0.20), 0.065, 'cast', seg=14, bevel=0.005)
 
 def coil(name, base, height, R=0.075, r=0.016, turns=5.5, material='steel'):
-    n = int(turns * 14)
+    n = int(turns * 10)
     pts = [(base[0] + R * math.cos(2 * math.pi * turns * k / n), base[1] + height * k / n,
             base[2] + R * math.sin(2 * math.pi * turns * k / n)) for k in range(n + 1)]
     return sweep(name, pts, r, material, seg=6)
@@ -2364,7 +2465,7 @@ def bogie(pid, xc, explode, motors_pid, motors_explode, first_axle):
             xa = xc + sx * WHEELBASE / 2
             box(f'{pid}.pedestal.{sz}{sx}', (xa, 0.44, zf), (0.34, 0.12, 0.10), 'cast', bevel=0.02)
             box(f'{pid}.axlebox.{sz}{sx}', (xa, AXLE_Y, zf), (0.24, 0.22, 0.15), 'cast', bevel=0.025)
-            cyl(f'{pid}.axlebox_cover.{sz}{sx}', (xa, AXLE_Y, zf + sz * 0.075), (xa, AXLE_Y, zf + sz * 0.10), 0.09, 'cast', seg=24, bevel=0.006)
+            cyl(f'{pid}.axlebox_cover.{sz}{sx}', (xa, AXLE_Y, zf + sz * 0.075), (xa, AXLE_Y, zf + sz * 0.10), 0.09, 'cast', seg=16, bevel=0.006)
             bm = bmesh.new()
             for k in range(6):                       # bolts on the axle box cover
                 a = 2 * math.pi * k / 6
@@ -2381,7 +2482,7 @@ def bogie(pid, xc, explode, motors_pid, motors_explode, first_axle):
             cyl(f'{pid}.tb_hanger.{sz}{sx}', (xc + sx * 0.35, 0.11, sz * WZ), (xc + sx * 0.35, 0.33, zf), 0.015, 'darkmetal', seg=10)
             box(f'{pid}.tb_coil.{sz}{sx}', (xc + sx * 0.22, 0.125, sz * WZ), (0.30, 0.04, 0.10), 'darkmetal', bevel=0.008)
     box(f'{pid}.bolster', (xc, 0.46, 0), (0.36, 0.10, 1.95), 'cast', bevel=0.02)
-    cyl(f'{pid}.pivot', (xc, 0.51, 0), (xc, BODY_BOTTOM + 0.01, 0), 0.12, 'cast', seg=28, bevel=0.008)
+    cyl(f'{pid}.pivot', (xc, 0.51, 0), (xc, BODY_BOTTOM + 0.01, 0), 0.12, 'cast', seg=20, bevel=0.008)
     for sx in (-1, 1):
         box(f'{pid}.transom.{sx}', (xc + sx * 0.62, 0.40, 0), (0.12, 0.10, 1.80), 'cast', bevel=0.015)
     for k, sx in enumerate((1, -1)):
@@ -2391,14 +2492,14 @@ def bogie(pid, xc, explode, motors_pid, motors_explode, first_axle):
     part(motors_pid, motors_explode)
     for sx, sz in ((1, 1), (-1, -1)):
         zz = sz * 0.30
-        cyl(f'{motors_pid}.motor.{sx}', (xc - sx * 0.42, 0.37, zz), (xc + sx * 0.40, 0.37, zz), 0.16, 'motor', seg=36, bevel=0.015)
+        cyl(f'{motors_pid}.motor.{sx}', (xc - sx * 0.42, 0.37, zz), (xc + sx * 0.40, 0.37, zz), 0.16, 'motor', seg=24, bevel=0.015)
         bm = bmesh.new()
         for k in range(6):
             xr = xc - sx * 0.30 + sx * k * 0.12
             cyl_into(bm, (xr - 0.006, 0.37, zz), (xr + 0.006, 0.37, zz), 0.168, 36)
         finish(bm, f'{motors_pid}.ribs.{sx}', 'motor', sharp=40)
-        cyl(f'{motors_pid}.drum.{sx}', (xc - sx * 0.43, 0.37, zz), (xc - sx * 0.52, 0.37, zz), 0.12, 'cast', seg=36, bevel=0.006)
-        cyl(f'{motors_pid}.band.{sx}', (xc - sx * 0.44, 0.37, zz), (xc - sx * 0.51, 0.37, zz), 0.127, 'darkmetal', seg=36)
+        cyl(f'{motors_pid}.drum.{sx}', (xc - sx * 0.43, 0.37, zz), (xc - sx * 0.52, 0.37, zz), 0.12, 'cast', seg=24, bevel=0.006)
+        cyl(f'{motors_pid}.band.{sx}', (xc - sx * 0.44, 0.37, zz), (xc - sx * 0.51, 0.37, zz), 0.127, 'darkmetal', seg=24)
         box(f'{motors_pid}.brake_unit.{sx}', (xc - sx * 0.475, 0.55, zz), (0.10, 0.08, 0.14), 'darkmetal', bevel=0.01)
         box(f'{motors_pid}.gearbox.{sx}', (xc + sx * 0.80, AXLE_Y + 0.01, zz), (0.36, 0.28, 0.24), 'cast', bevel=0.04)
 
@@ -2433,7 +2534,7 @@ for pid, s in (('coupler_front', 1), ('coupler_rear', -1)):
 # (the step plate seen under the front door), a dark sloping front and a dark bottom.
 part('guard_plate', explode=(0.8, -0.25, 0))
 GP_W = 0.89                                           # half-width: 1.78 m
-GP_TOP, GP_BOT = 0.280, 0.110
+GP_TOP, GP_BOT = 0.280, 0.110                        # (side elevation: bottom ~0.12 m; the front elevation's 52-58 mm is not used)
 GP_XT0, GP_XT1, GP_XB0, GP_XB1 = 4.648, 6.288, 4.815, 6.42
 bm = bmesh.new()
 for sz in (-1, 1):
@@ -2750,11 +2851,13 @@ if '--render' in ARGS or '--checks' in ARGS:
         bpy.ops.render.render(write_still=True)
     if '--checks' in ARGS:
         shots = ARGS[ARGS.index('--shots') + 1].split(',') if '--shots' in ARGS else ['side', 'front', 'bogie', 'interior']
-        def shot(name, loc, look, lens=35, ortho=None):
+        def shot(name, loc, look, lens=35, ortho=None, clip=None):
             co = camera(loc, look, lens, res)
             if ortho:
                 co.data.type = 'ORTHO'
                 co.data.ortho_scale = ortho
+            if clip:
+                co.data.clip_start = clip
             scene.render.filepath = os.path.join(OUT, name)
             bpy.ops.render.render(write_still=True)
         if '--dooropen' in ARGS:                       # check renders only: leaves opened as on the web page
@@ -2782,6 +2885,8 @@ if '--render' in ARGS or '--checks' in ARGS:
         if 'lrear' in shots: shot('check_lrear.png', (-7.0, 3.6, -13.0), (-1.8, 1.5, 0.0), lens=42)
         if 'lrearc' in shots: shot('check_lrearc.png', (-10.6, 1.9, -4.3), (-6.5, 1.45, -0.5), lens=38)
         if 'lrearlow' in shots: shot('check_lrearlow.png', (-9.6, 0.55, -3.6), (-6.2, 0.45, -0.6), lens=35)
+        if 'postupte' in shots: shot('check_postupte.png', (1.2, 2.05, -0.45), (2.75, 2.50, 1.15), lens=35)
+        if 'board' in shots: shot('check_board.png', (3.6, 2.05, 4.6), (3.75, 2.25, 1.2), lens=40)
         if 'tails' in shots: shot('check_tails.png', (-9.2, 1.05, 1.1), (-6.9, 0.95, 0.0), lens=55)
         _mc = (MD0 + MD1) / 2
         if 'stairsout' in shots: shot('check_stairsout.png', (_mc + 0.3, 1.25, 3.0), (_mc, 0.45, 1.0), lens=28)
@@ -2796,14 +2901,15 @@ if '--render' in ARGS or '--checks' in ARGS:
         if 'bogie' in shots: shot('check_bogie.png', (4.6, 0.55, 2.6), (3.2, 0.40, 0.6), lens=28)
         if 'detail' in shots: shot('check_detail.png', (7.6, 2.0, 2.6), (5.6, 1.9, 1.1), lens=35)
         if 'in_saloon' in shots: shot('in_saloon.png', (2.6, 2.05, -0.10), (-4.0, 1.25, 0.05), lens=22)       # photo 6149-015
+        if 'in_cond' in shots: shot('in_cond.png', (-1.6, 2.05, -0.25), (3.6, 1.55, 0.35), lens=24)   # like the 6241 photo
         if 'in_front' in shots: shot('in_front.png', (3.6, 1.85, -0.55), (6.6, 1.55, 0.35), lens=22)        # photo 6149-016
         if 'in_rear' in shots: shot('in_rear.png', (-3.9, 1.80, 0.30), (-6.9, 1.45, -0.05), lens=22)       # photo 6149-017
         if 'in_cab' in shots: shot('in_cab.png', (5.62, 2.22, 0.62), (6.9, 1.45, -0.15), lens=24)           # photo 6102 cab
         if 'in_plan' in shots:                                                                          # plan, roof hidden
             hid = [o for o in bpy.data.objects if o.type == 'MESH' and (o.matrix_world @ Vector(o.bound_box[0])).z > 2.5 - 1e-3 * 0
                    and min((o.matrix_world @ Vector(c)).z for c in o.bound_box) > 2.0]
-            hid += [o for o in bpy.data.objects if o.name.startswith(('interior.ceiling', 'body.', 'roof', 'pan', 'vent', 'front_mask', 'rear_mask'))]
+            hid += [o for o in bpy.data.objects if o.name.startswith(('interior.ceiling', 'body.', 'roof', 'pan', 'vent', 'front_mask', 'rear_mask', 'handrail', 'lamp'))]   # (overhead rails and lamps: not in the plan)
             for o in hid: o.hide_render = True
-            shot('in_plan.png', (0.0, 12.0, 0.0001), (0.0, 0.0, 0.0), ortho=14.6)
+            shot('in_plan.png', (0.0, 12.0, 0.0001), (0.0, 0.0, 0.0), ortho=14.6, clip=12.0 - 2.40)   # (cut at 2.4 m: no rails or lamps)
             for o in hid: o.hide_render = False
         if 'interior' in shots: shot('check_interior.png', (-5.6, 1.62, 0.25), (3.0, 1.35, -0.05), lens=20)

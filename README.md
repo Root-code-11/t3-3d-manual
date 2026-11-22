@@ -18,6 +18,8 @@ Interaktivní 3D model první pražské tramvaje Tatra T3, prototypu 6101 z roku
 | ![Salon](docs/interior_saloon.png) | ![Přední plošina](docs/interior_front.png) |
 | ![Zadní plošina](docs/interior_rear.png) | ![Stanoviště](docs/interior_cab.png) |
 
+![Stanoviště průvodčího / conductor's post](docs/interior_conductor.png)
+
 ![Interiér v prohlížeči / interior in the viewer](docs/interior_web.png)
 
 ## Spuštění / Running it
